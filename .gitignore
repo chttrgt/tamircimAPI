@@ -8,6 +8,9 @@ obj/
 *.suo
 .vs/
 *.swp
+*.pfx
+appsettings.Development.json
+appsettings.Production.json
 
 # Loglar
 logs/
