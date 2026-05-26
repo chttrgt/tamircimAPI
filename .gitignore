@@ -1,0 +1,23 @@
+# Ortam değişkenleri - asla commit etme
+.env
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.swp
+
+# Loglar
+logs/
+*.log
+*.clef
+
+# IDE
+.idea/
+.vscode/
+*.DS_Store
+
+# Docker volumes (local geliştirme)
+postgres_data/
