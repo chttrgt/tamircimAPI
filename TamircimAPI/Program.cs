@@ -57,7 +57,8 @@ var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
 if (string.IsNullOrEmpty(jwtKey) || jwtKey.Length < 32)
     throw new InvalidOperationException("JWT_SECRET_KEY en az 32 karakter olmalıdır.");
 
-var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+var envConnStr = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+var connectionString = (!string.IsNullOrWhiteSpace(envConnStr) ? envConnStr : null)
     ?? BuildConnectionString()
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Veritabanı bağlantı dizesi yapılandırılmamış.");
@@ -73,7 +74,17 @@ static string? BuildConnectionString()
     if (string.IsNullOrEmpty(db) || string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
         return null;
 
-    return $"Host={host};Port={port};Database={db};Username={user};Password={pass};Client Encoding=UTF8";
+    // NpgsqlConnectionStringBuilder şifredeki özel karakterleri (; , @ vb.) doğru escape eder
+    var builder = new Npgsql.NpgsqlConnectionStringBuilder
+    {
+        Host = host,
+        Port = int.Parse(port),
+        Database = db,
+        Username = user,
+        Password = pass,
+        ClientEncoding = "UTF8"
+    };
+    return builder.ConnectionString;
 }
 
 var allowedHosts = Environment.GetEnvironmentVariable("ALLOWED_HOSTS")

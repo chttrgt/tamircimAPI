@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+**/.vs/
+**/logs/
+.env
+.git
+.gitignore
+.gitattributes
+README.md
