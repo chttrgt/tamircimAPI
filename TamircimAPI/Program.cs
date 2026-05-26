@@ -58,8 +58,23 @@ if (string.IsNullOrEmpty(jwtKey) || jwtKey.Length < 32)
     throw new InvalidOperationException("JWT_SECRET_KEY en az 32 karakter olmalıdır.");
 
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+    ?? BuildConnectionString()
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Veritabanı bağlantı dizesi yapılandırılmamış.");
+
+static string? BuildConnectionString()
+{
+    var host = Environment.GetEnvironmentVariable("POSTGRES_HOST") ?? "postgres";
+    var port = Environment.GetEnvironmentVariable("POSTGRES_PORT") ?? "5432";
+    var db   = Environment.GetEnvironmentVariable("POSTGRES_DB");
+    var user = Environment.GetEnvironmentVariable("POSTGRES_USER");
+    var pass = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD");
+
+    if (string.IsNullOrEmpty(db) || string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
+        return null;
+
+    return $"Host={host};Port={port};Database={db};Username={user};Password={pass};Client Encoding=UTF8";
+}
 
 var allowedHosts = Environment.GetEnvironmentVariable("ALLOWED_HOSTS")
     ?? builder.Configuration["AllowedHosts"]
