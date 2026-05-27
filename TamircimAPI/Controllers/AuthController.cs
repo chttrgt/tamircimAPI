@@ -16,6 +16,15 @@ namespace TamircimAPI.Controllers
             _authService = authService;
         }
 
+        [HttpPost("register")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> Register([FromBody] RegisterDTO dto)
+        {
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var result = await _authService.RegisterAsync(dto, ipAddress);
+            return Ok(result);
+        }
+
         [HttpPost("login")]
         [EnableRateLimiting("login")]
         public async Task<IActionResult> Login([FromBody] LoginDTO dto)

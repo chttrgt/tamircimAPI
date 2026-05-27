@@ -19,6 +19,54 @@ namespace TamircimAPI.Services.Auth
             _configuration = configuration;
         }
 
+        public async Task<LoginResponseDTO> RegisterAsync(RegisterDTO dto, string ipAddress)
+        {
+            var exists = await _db.Users.AnyAsync(u => u.Email == dto.Email);
+            if (exists)
+                throw new ArgumentException("Bu e-posta adresi zaten kayıtlı.");
+
+            var salt = BCrypt.Net.BCrypt.GenerateSalt(12);
+            var hash = BCrypt.Net.BCrypt.HashPassword(dto.Password, salt);
+
+            var user = new User
+            {
+                FirstName = dto.FirstName.Trim(),
+                LastName = dto.LastName.Trim(),
+                Email = dto.Email.Trim().ToLowerInvariant(),
+                PasswordHash = hash,
+                PasswordSalt = salt,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+
+            _db.Users.Add(user);
+            await _db.SaveChangesAsync();
+
+            var accessToken = _tokenService.GenerateAccessToken(user);
+            var refreshToken = _tokenService.GenerateRefreshToken();
+            var expireDays = int.Parse(_configuration["Jwt:RefreshTokenExpireDays"] ?? "7");
+
+            _db.RefreshTokens.Add(new RefreshToken
+            {
+                UserId = user.Id,
+                Token = refreshToken,
+                ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
+                CreatedByIp = ipAddress
+            });
+
+            await _db.SaveChangesAsync();
+
+            return new LoginResponseDTO
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                UserId = user.Id,
+                FullName = user.FullName,
+                Email = user.Email
+            };
+        }
+
         public async Task<LoginResponseDTO> LoginAsync(LoginDTO dto, string ipAddress)
         {
             var user = await _db.Users
