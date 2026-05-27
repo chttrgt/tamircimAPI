@@ -6,7 +6,7 @@ using TamircimAPI.Services.Device;
 namespace TamircimAPI.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/devices")]
     [Authorize]
     public class DeviceController : ControllerBase
     {

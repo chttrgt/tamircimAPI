@@ -7,7 +7,7 @@ using TamircimAPI.Services.Repair;
 namespace TamircimAPI.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/repairs")]
     [Authorize]
     public class RepairController : ControllerBase
     {

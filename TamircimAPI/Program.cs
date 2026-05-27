@@ -16,6 +16,7 @@ using TamircimAPI.Authorization;
 using TamircimAPI.Data;
 using TamircimAPI.Middleware;
 using TamircimAPI.Services.Auth;
+using TamircimAPI.Services.Dashboard;
 using TamircimAPI.Services.Customer;
 using TamircimAPI.Services.Device;
 using TamircimAPI.Services.Repair;
@@ -127,6 +128,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Servis Kayıtları
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICustomerQueryService, CustomerQueryService>();
 builder.Services.AddScoped<ICustomerCommandService, CustomerCommandService>();
 builder.Services.AddScoped<IDeviceQueryService, DeviceQueryService>();

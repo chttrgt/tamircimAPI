@@ -6,7 +6,7 @@ using TamircimAPI.Services.Customer;
 namespace TamircimAPI.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/customers")]
     [Authorize]
     public class CustomerController : ControllerBase
     {

@@ -32,6 +32,7 @@ namespace TamircimAPI.Services.Auth
             {
                 FirstName = dto.FirstName.Trim(),
                 LastName = dto.LastName.Trim(),
+                Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
                 Email = dto.Email.Trim().ToLowerInvariant(),
                 PasswordHash = hash,
                 PasswordSalt = salt,
@@ -63,6 +64,7 @@ namespace TamircimAPI.Services.Auth
                 RefreshToken = refreshToken,
                 UserId = user.Id,
                 FullName = user.FullName,
+                Title = user.Title,
                 Email = user.Email
             };
         }
@@ -96,6 +98,7 @@ namespace TamircimAPI.Services.Auth
                 RefreshToken = refreshToken,
                 UserId = user.Id,
                 FullName = user.FullName,
+                Title = user.Title,
                 Email = user.Email
             };
         }
@@ -135,6 +138,7 @@ namespace TamircimAPI.Services.Auth
                 RefreshToken = newRefreshToken,
                 UserId = token.User.Id,
                 FullName = token.User.FullName,
+                Title = token.User.Title,
                 Email = token.User.Email
             };
         }

@@ -13,6 +13,7 @@ namespace TamircimAPI.Models
         public string? SerialNumber { get; set; }
         public string FaultDescription { get; set; } = string.Empty;
         public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? DeliveryDate { get; set; }
         public string? Notes { get; set; }
 
         // IAuditable
