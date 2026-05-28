@@ -50,6 +50,10 @@ namespace TamircimAPI.Models.DTOs.Repair
         public string CustomerFullName { get; set; } = string.Empty;
         public RepairStatus Status { get; set; }
         public string StatusLabel { get; set; } = string.Empty;
+        public string? WorkDone { get; set; }
+        public string? NotRepairedReason { get; set; }
+        public string? WaitingReason { get; set; }
+        public string? Notes { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
     }

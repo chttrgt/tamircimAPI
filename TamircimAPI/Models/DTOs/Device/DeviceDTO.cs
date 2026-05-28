@@ -14,6 +14,7 @@ namespace TamircimAPI.Models.DTOs.Device
         public string? SerialNumber { get; set; }
         public string FaultDescription { get; set; } = string.Empty;
         public DateTime ReceivedAt { get; set; }
+        public DateTime? DeliveryDate { get; set; }
         public string? Notes { get; set; }
         public DateTime CreatedAt { get; set; }
         public string? CurrentStatus { get; set; }
@@ -28,6 +29,7 @@ namespace TamircimAPI.Models.DTOs.Device
         public string? SerialNumber { get; set; }
         public string FaultDescription { get; set; } = string.Empty;
         public DateTime? ReceivedAt { get; set; }
+        public DateTime? DeliveryDate { get; set; }
         public string? Notes { get; set; }
     }
 
@@ -38,6 +40,7 @@ namespace TamircimAPI.Models.DTOs.Device
         public string Model { get; set; } = string.Empty;
         public string? SerialNumber { get; set; }
         public string FaultDescription { get; set; } = string.Empty;
+        public DateTime? DeliveryDate { get; set; }
         public string? Notes { get; set; }
     }
 

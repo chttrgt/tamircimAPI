@@ -16,7 +16,7 @@ namespace TamircimAPI.Services.Device
 
         public async Task<IEnumerable<DeviceListDTO>> GetAllAsync(int? customerId = null, string? search = null)
         {
-            var query = _db.Devices.Include(d => d.Customer).AsQueryable();
+            var query = _db.Devices.Include(d => d.Customer).Include(d => d.RepairRecords).AsQueryable();
 
             if (customerId.HasValue)
                 query = query.Where(d => d.CustomerId == customerId.Value);
@@ -73,6 +73,7 @@ namespace TamircimAPI.Services.Device
                 SerialNumber = d.SerialNumber,
                 FaultDescription = d.FaultDescription,
                 ReceivedAt = d.ReceivedAt,
+                DeliveryDate = d.DeliveryDate,
                 Notes = d.Notes,
                 CreatedAt = d.CreatedAt,
                 CurrentStatus = d.RepairRecords

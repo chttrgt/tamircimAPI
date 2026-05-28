@@ -49,5 +49,6 @@ namespace TamircimAPI.Models.DTOs.Customer
         public string? NationalId { get; set; }
         public DateTime CreatedAt { get; set; }
         public int DeviceCount { get; set; }
+        public string? PrimaryDeviceType { get; set; }
     }
 }

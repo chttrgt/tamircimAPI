@@ -37,7 +37,12 @@ namespace TamircimAPI.Services.Customer
                     Email = c.Email,
                     NationalId = c.NationalId,
                     CreatedAt = c.CreatedAt,
-                    DeviceCount = c.Devices.Count
+                    DeviceCount = c.Devices.Count(d => !d.IsDeleted),
+                    PrimaryDeviceType = c.Devices
+                        .Where(d => !d.IsDeleted)
+                        .OrderByDescending(d => d.ReceivedAt)
+                        .Select(d => d.DeviceType.ToString())
+                        .FirstOrDefault()
                 })
                 .ToListAsync();
         }

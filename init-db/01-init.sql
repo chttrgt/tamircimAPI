@@ -85,8 +85,10 @@ CREATE TABLE "Customers" (
     CONSTRAINT "FK_Customers_UpdatedBy" FOREIGN KEY ("UpdatedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL,
     CONSTRAINT "FK_Customers_DeletedBy" FOREIGN KEY ("DeletedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL
 );
-CREATE INDEX "IX_Customers_Phone1" ON "Customers" ("Phone1");
-CREATE INDEX "IX_Customers_NationalId" ON "Customers" ("NationalId") WHERE "NationalId" IS NOT NULL;
+CREATE UNIQUE INDEX "IX_Customers_Phone1" ON "Customers" ("Phone1") WHERE "IsDeleted" = false;
+CREATE UNIQUE INDEX "IX_Customers_Phone2" ON "Customers" ("Phone2") WHERE "Phone2" IS NOT NULL AND "IsDeleted" = false;
+CREATE UNIQUE INDEX "IX_Customers_NationalId" ON "Customers" ("NationalId") WHERE "NationalId" IS NOT NULL AND "IsDeleted" = false;
+CREATE UNIQUE INDEX "IX_Customers_Email" ON "Customers" ("Email") WHERE "Email" IS NOT NULL AND "IsDeleted" = false;
 CREATE INDEX "IX_Customers_IsDeleted" ON "Customers" ("IsDeleted") WHERE "IsDeleted" = false;
 
 -- =============================================
@@ -187,8 +189,8 @@ INSERT INTO "Users" ("FirstName", "LastName", "Email", "PasswordHash", "Password
 VALUES (
     'Admin',
     'Kullanıcı',
-    'admin@tamircim.local',
-    '$2a$11$rBnNhl5T3XDZKzxMDSnXfOYimhF5c7wVTR3hb5lqSMRvJF6cGb5iu',
-    '$2a$11$rBnNhl5T3XDZKzxMDSnXfO',
+    'admin@tamircim.com',
+    '$2a$12$HwmNDSCVxf8XJk0JTRrHjueJ1kacab5CSlcitc9xZkj2O8Fhxg00y',
+    '$2a$12$HwmNDSCVxf8XJk0JTRrHju',
     true
 );

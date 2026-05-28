@@ -18,19 +18,17 @@ namespace TamircimAPI.Services.Dashboard
         {
             var now = DateTime.UtcNow;
 
-            var statsTask = GetStatsAsync(now);
-            var recentTask = GetRecentCustomersAsync();
-            var overdueTask = GetOverdueDevicesAsync(now);
-            var waitingTask = GetWaitingForPartsAsync(now);
-
-            await Task.WhenAll(statsTask, recentTask, overdueTask, waitingTask);
+            var stats = await GetStatsAsync(now);
+            var recentCustomers = await GetRecentCustomersAsync();
+            var overdueDevices = await GetOverdueDevicesAsync(now);
+            var waitingForParts = await GetWaitingForPartsAsync(now);
 
             return new DashboardResponseDTO
             {
-                Stats = await statsTask,
-                RecentCustomers = await recentTask,
-                OverdueDevices = await overdueTask,
-                WaitingForParts = await waitingTask
+                Stats = stats,
+                RecentCustomers = recentCustomers,
+                OverdueDevices = overdueDevices,
+                WaitingForParts = waitingForParts
             };
         }
 
@@ -60,21 +58,33 @@ namespace TamircimAPI.Services.Dashboard
 
         private async Task<List<DashboardDeviceDTO>> GetRecentCustomersAsync()
         {
-            return await _db.Customers
+            var raw = await _db.Customers
                 .OrderByDescending(c => c.CreatedAt)
                 .Take(5)
-                .Select(c => new DashboardDeviceDTO
+                .Select(c => new
                 {
-                    CustomerId = c.Id,
+                    c.Id,
                     CustomerName = c.FirstName + " " + c.LastName,
-                    Phone = c.Phone1,
-                    DeviceId = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => d.Id).FirstOrDefault(),
+                    c.Phone1,
+                    DeviceId = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => (int?)d.Id).FirstOrDefault(),
                     Brand = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => d.Brand).FirstOrDefault() ?? "-",
                     Model = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => d.Model).FirstOrDefault() ?? "-",
-                    DeviceType = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => (int?)d.DeviceType).FirstOrDefault().ToString() ?? "3",
-                    CreatedAt = c.CreatedAt
+                    DeviceTypeInt = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => (int?)d.DeviceType).FirstOrDefault(),
+                    c.CreatedAt
                 })
                 .ToListAsync();
+
+            return raw.Select(x => new DashboardDeviceDTO
+            {
+                CustomerId = x.Id,
+                CustomerName = x.CustomerName,
+                Phone = x.Phone1,
+                DeviceId = x.DeviceId ?? 0,
+                Brand = x.Brand,
+                Model = x.Model,
+                DeviceType = x.DeviceTypeInt.HasValue ? DeviceTypeLabel(x.DeviceTypeInt.Value) : "Diğer",
+                CreatedAt = x.CreatedAt
+            }).ToList();
         }
 
         private async Task<List<DashboardDeviceDTO>> GetOverdueDevicesAsync(DateTime now)

@@ -39,6 +39,10 @@ namespace TamircimAPI.Services.Repair
                     StatusLabel = r.Status == RepairStatus.Waiting ? "Beklemede"
                         : r.Status == RepairStatus.Repaired ? "Onarıldı"
                         : "Onarılmadı",
+                    WorkDone = r.WorkDone,
+                    NotRepairedReason = r.NotRepairedReason,
+                    WaitingReason = r.WaitingReason,
+                    Notes = r.Notes,
                     CreatedAt = r.CreatedAt,
                     CompletedAt = r.CompletedAt
                 })

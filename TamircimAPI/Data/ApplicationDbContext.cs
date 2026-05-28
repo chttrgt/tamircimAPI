@@ -250,8 +250,10 @@ namespace TamircimAPI.Data
                 entity.Property(e => e.Address).HasColumnType("text");
                 entity.Property(e => e.Notes).HasColumnType("text");
 
-                entity.HasIndex(e => e.Phone1);
-                entity.HasIndex(e => e.NationalId).HasFilter("\"NationalId\" IS NOT NULL");
+                entity.HasIndex(e => e.Phone1).IsUnique().HasFilter("\"IsDeleted\" = false");
+                entity.HasIndex(e => e.Phone2).IsUnique().HasFilter("\"Phone2\" IS NOT NULL AND \"IsDeleted\" = false");
+                entity.HasIndex(e => e.NationalId).IsUnique().HasFilter("\"NationalId\" IS NOT NULL AND \"IsDeleted\" = false");
+                entity.HasIndex(e => e.Email).IsUnique().HasFilter("\"Email\" IS NOT NULL AND \"IsDeleted\" = false");
                 entity.Ignore(e => e.FullName);
 
                 entity.HasOne(e => e.CreatedByUser)

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Data;
 using TamircimAPI.Models.DTOs.Device;
+using TamircimAPI.Models.Enums;
 
 namespace TamircimAPI.Services.Device
 {
@@ -30,10 +31,18 @@ namespace TamircimAPI.Services.Device
                 SerialNumber = dto.SerialNumber?.Trim(),
                 FaultDescription = dto.FaultDescription.Trim(),
                 ReceivedAt = dto.ReceivedAt ?? DateTime.UtcNow,
+                DeliveryDate = dto.DeliveryDate,
                 Notes = dto.Notes?.Trim()
             };
 
             _db.Devices.Add(device);
+            await _db.SaveChangesAsync();
+
+            _db.RepairRecords.Add(new Models.RepairRecord
+            {
+                DeviceId = device.Id,
+                Status = RepairStatus.Waiting,
+            });
             await _db.SaveChangesAsync();
 
             return (await _query.GetByIdAsync(device.Id))!;
@@ -49,6 +58,7 @@ namespace TamircimAPI.Services.Device
             device.Model = dto.Model.Trim();
             device.SerialNumber = dto.SerialNumber?.Trim();
             device.FaultDescription = dto.FaultDescription.Trim();
+            device.DeliveryDate = dto.DeliveryDate;
             device.Notes = dto.Notes?.Trim();
 
             await _db.SaveChangesAsync();

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Data;
+using TamircimAPI.Exceptions;
 using TamircimAPI.Models.DTOs.Customer;
 
 namespace TamircimAPI.Services.Customer
@@ -15,8 +16,55 @@ namespace TamircimAPI.Services.Customer
             _query = query;
         }
 
+        private async Task EnsureUniqueFieldsAsync(string phone1, string? phone2, string? nationalId, string? email, int? excludeId = null)
+        {
+            if (!string.IsNullOrEmpty(phone2) && phone1 == phone2)
+                throw new BusinessRuleException(
+                    "Telefon 1 ve Telefon 2 aynı olamaz.",
+                    "PHONES_ARE_EQUAL");
+
+            var phoneExists = await _db.Customers.AnyAsync(c =>
+                c.Phone1 == phone1 && (excludeId == null || c.Id != excludeId));
+            if (phoneExists)
+                throw new BusinessRuleException(
+                    "Bu telefon numarası başka bir müşteriye kayıtlıdır.",
+                    "PHONE_ALREADY_EXISTS");
+
+            if (!string.IsNullOrEmpty(phone2))
+            {
+                var phone2Exists = await _db.Customers.AnyAsync(c =>
+                    c.Phone2 == phone2 && (excludeId == null || c.Id != excludeId));
+                if (phone2Exists)
+                    throw new BusinessRuleException(
+                        "Bu telefon numarası başka bir müşteriye kayıtlıdır.",
+                        "PHONE2_ALREADY_EXISTS");
+            }
+
+            if (!string.IsNullOrEmpty(nationalId))
+            {
+                var tcExists = await _db.Customers.AnyAsync(c =>
+                    c.NationalId == nationalId && (excludeId == null || c.Id != excludeId));
+                if (tcExists)
+                    throw new BusinessRuleException(
+                        "Bu TC Kimlik No başka bir müşteriye kayıtlıdır.",
+                        "NATIONAL_ID_ALREADY_EXISTS");
+            }
+
+            if (!string.IsNullOrEmpty(email))
+            {
+                var emailExists = await _db.Customers.AnyAsync(c =>
+                    c.Email == email && (excludeId == null || c.Id != excludeId));
+                if (emailExists)
+                    throw new BusinessRuleException(
+                        "Bu e-posta adresi başka bir müşteriye kayıtlıdır.",
+                        "EMAIL_ALREADY_EXISTS");
+            }
+        }
+
         public async Task<CustomerDTO> CreateAsync(CreateCustomerDTO dto)
         {
+            await EnsureUniqueFieldsAsync(dto.Phone1.Trim(), dto.Phone2?.Trim(), dto.NationalId?.Trim(), dto.Email?.Trim());
+
             var customer = new Models.Customer
             {
                 FirstName = dto.FirstName.Trim(),
@@ -39,6 +87,8 @@ namespace TamircimAPI.Services.Customer
         {
             var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == id)
                 ?? throw new KeyNotFoundException($"Müşteri bulunamadı: {id}");
+
+            await EnsureUniqueFieldsAsync(dto.Phone1.Trim(), dto.Phone2?.Trim(), dto.NationalId?.Trim(), dto.Email?.Trim(), excludeId: id);
 
             customer.FirstName = dto.FirstName.Trim();
             customer.LastName = dto.LastName.Trim();
