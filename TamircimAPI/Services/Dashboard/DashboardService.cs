@@ -41,10 +41,12 @@ namespace TamircimAPI.Services.Dashboard
                 .Where(d => d.RepairRecords.Any(r => r.Status == RepairStatus.Waiting))
                 .CountAsync();
 
+            var sevenDaysAgo = now.AddDays(-7);
             var totalOverdue = await _db.Devices
                 .Where(d => !d.IsDelivered
-                         && d.DeliveryDate.HasValue
-                         && d.DeliveryDate.Value < now)
+                         && d.RepairRecords.Any(r => !r.IsDeleted
+                                                  && r.Status == RepairStatus.Waiting
+                                                  && r.CreatedAt < sevenDaysAgo))
                 .CountAsync();
 
             return new DashboardStatsDTO
@@ -89,12 +91,23 @@ namespace TamircimAPI.Services.Dashboard
 
         private async Task<List<DashboardDeviceDTO>> GetOverdueDevicesAsync(DateTime now)
         {
-            var raw = await _db.Devices
-                .Where(d => !d.IsDelivered
-                         && d.DeliveryDate.HasValue
-                         && d.DeliveryDate.Value < now)
-                .OrderBy(d => d.DeliveryDate)
+            var sevenDaysAgo = now.AddDays(-7);
+
+            var waitingGroups = await _db.RepairRecords
+                .Where(r => !r.IsDeleted
+                         && r.Status == RepairStatus.Waiting
+                         && r.CreatedAt < sevenDaysAgo
+                         && !r.Device.IsDelivered)
+                .GroupBy(r => r.DeviceId)
+                .Select(g => new { DeviceId = g.Key, WaitingSince = g.Min(r => r.CreatedAt) })
+                .OrderBy(g => g.WaitingSince)
                 .Take(5)
+                .ToListAsync();
+
+            var deviceIds = waitingGroups.Select(g => g.DeviceId).ToList();
+
+            var devices = await _db.Devices
+                .Where(d => deviceIds.Contains(d.Id))
                 .Select(d => new
                 {
                     d.Id,
@@ -104,23 +117,26 @@ namespace TamircimAPI.Services.Dashboard
                     d.Brand,
                     d.Model,
                     DeviceTypeInt = (int)d.DeviceType,
-                    d.DeliveryDate,
                     d.CreatedAt
                 })
                 .ToListAsync();
 
-            return raw.Select(x => new DashboardDeviceDTO
+            return waitingGroups.Select(g =>
             {
-                CustomerId = x.CustomerId,
-                CustomerName = x.CustomerName,
-                Phone = x.Phone,
-                DeviceId = x.Id,
-                Brand = x.Brand,
-                Model = x.Model,
-                DeviceType = DeviceTypeLabel(x.DeviceTypeInt),
-                DeliveryDate = x.DeliveryDate,
-                OverdueDays = (int)(now - x.DeliveryDate!.Value).TotalDays,
-                CreatedAt = x.CreatedAt
+                var d = devices.First(x => x.Id == g.DeviceId);
+                return new DashboardDeviceDTO
+                {
+                    CustomerId = d.CustomerId,
+                    CustomerName = d.CustomerName,
+                    Phone = d.Phone,
+                    DeviceId = d.Id,
+                    Brand = d.Brand,
+                    Model = d.Model,
+                    DeviceType = DeviceTypeLabel(d.DeviceTypeInt),
+                    WaitingSince = g.WaitingSince,
+                    WaitingDays = (int)(now - g.WaitingSince).TotalDays,
+                    CreatedAt = d.CreatedAt
+                };
             }).ToList();
         }
 
