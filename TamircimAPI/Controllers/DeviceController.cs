@@ -48,6 +48,20 @@ namespace TamircimAPI.Controllers
             return Ok(result);
         }
 
+        [HttpPatch("{id:int}/deliver")]
+        public async Task<IActionResult> MarkDelivered(int id, [FromBody] MarkDeliveredDTO? dto = null)
+        {
+            var result = await _command.MarkDeliveredAsync(id, dto?.DeliveredAt);
+            return Ok(result);
+        }
+
+        [HttpPatch("{id:int}/undeliver")]
+        public async Task<IActionResult> UndoDelivery(int id)
+        {
+            var result = await _command.UndoDeliveryAsync(id);
+            return Ok(result);
+        }
+
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> Delete(int id)
         {

@@ -74,6 +74,8 @@ namespace TamircimAPI.Services.Device
                 FaultDescription = d.FaultDescription,
                 ReceivedAt = d.ReceivedAt,
                 DeliveryDate = d.DeliveryDate,
+                IsDelivered = d.IsDelivered,
+                DeliveredAt = d.DeliveredAt,
                 Notes = d.Notes,
                 CreatedAt = d.CreatedAt,
                 CurrentStatus = d.RepairRecords

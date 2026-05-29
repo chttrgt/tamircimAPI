@@ -42,9 +42,9 @@ namespace TamircimAPI.Services.Dashboard
                 .CountAsync();
 
             var totalOverdue = await _db.Devices
-                .Where(d => d.DeliveryDate.HasValue
-                         && d.DeliveryDate.Value < now
-                         && d.RepairRecords.Any(r => r.Status == RepairStatus.Waiting))
+                .Where(d => !d.IsDelivered
+                         && d.DeliveryDate.HasValue
+                         && d.DeliveryDate.Value < now)
                 .CountAsync();
 
             return new DashboardStatsDTO
@@ -90,9 +90,9 @@ namespace TamircimAPI.Services.Dashboard
         private async Task<List<DashboardDeviceDTO>> GetOverdueDevicesAsync(DateTime now)
         {
             var raw = await _db.Devices
-                .Where(d => d.DeliveryDate.HasValue
-                         && d.DeliveryDate.Value < now
-                         && d.RepairRecords.Any(r => r.Status == RepairStatus.Waiting))
+                .Where(d => !d.IsDelivered
+                         && d.DeliveryDate.HasValue
+                         && d.DeliveryDate.Value < now)
                 .OrderBy(d => d.DeliveryDate)
                 .Take(5)
                 .Select(d => new

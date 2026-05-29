@@ -61,7 +61,38 @@ namespace TamircimAPI.Services.Device
             device.SerialNumber = dto.SerialNumber?.Trim();
             device.FaultDescription = dto.FaultDescription.Trim();
             device.DeliveryDate = dto.DeliveryDate;
+            if (device.IsDelivered && dto.DeliveryDate.HasValue)
+                device.DeliveredAt = dto.DeliveryDate;
             device.Notes = dto.Notes?.Trim();
+
+            await _db.SaveChangesAsync();
+
+            return (await _query.GetByIdAsync(id))!;
+        }
+
+        public async Task<DeviceDTO> MarkDeliveredAsync(int id, DateTime? deliveredAt = null)
+        {
+            var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == id)
+                ?? throw new KeyNotFoundException($"Cihaz bulunamadı: {id}");
+
+            var ts = deliveredAt ?? DateTime.UtcNow;
+            device.IsDelivered = true;
+            device.DeliveredAt = ts;
+            device.DeliveryDate = ts;
+
+            await _db.SaveChangesAsync();
+
+            return (await _query.GetByIdAsync(id))!;
+        }
+
+        public async Task<DeviceDTO> UndoDeliveryAsync(int id)
+        {
+            var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == id)
+                ?? throw new KeyNotFoundException($"Cihaz bulunamadı: {id}");
+
+            device.IsDelivered = false;
+            device.DeliveredAt = null;
+            device.DeliveryDate = null;
 
             await _db.SaveChangesAsync();
 

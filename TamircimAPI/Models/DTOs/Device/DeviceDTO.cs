@@ -15,6 +15,8 @@ namespace TamircimAPI.Models.DTOs.Device
         public string FaultDescription { get; set; } = string.Empty;
         public DateTime ReceivedAt { get; set; }
         public DateTime? DeliveryDate { get; set; }
+        public bool IsDelivered { get; set; }
+        public DateTime? DeliveredAt { get; set; }
         public string? Notes { get; set; }
         public DateTime CreatedAt { get; set; }
         public string? CurrentStatus { get; set; }
@@ -33,6 +35,11 @@ namespace TamircimAPI.Models.DTOs.Device
         public string? Notes { get; set; }
         public string? InitialWaitingReason { get; set; }
         public string? InitialRepairNotes { get; set; }
+    }
+
+    public class MarkDeliveredDTO
+    {
+        public DateTime? DeliveredAt { get; set; }
     }
 
     public class UpdateDeviceDTO

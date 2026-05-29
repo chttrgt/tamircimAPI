@@ -105,6 +105,8 @@ CREATE TABLE "Devices" (
     "FaultDescription"  text NOT NULL,
     "ReceivedAt"        timestamp DEFAULT timezone('utc', now()) NOT NULL,
     "DeliveryDate"      timestamp NULL,
+    "IsDelivered"       bool DEFAULT false NOT NULL,
+    "DeliveredAt"       timestamp NULL,
     "Notes"             text NULL,
     "CreatedAt"         timestamp DEFAULT timezone('utc', now()) NOT NULL,
     "UpdatedAt"         timestamp DEFAULT timezone('utc', now()) NOT NULL,
