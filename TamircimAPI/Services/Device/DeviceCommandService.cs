@@ -42,6 +42,8 @@ namespace TamircimAPI.Services.Device
             {
                 DeviceId = device.Id,
                 Status = RepairStatus.Waiting,
+                WaitingReason = dto.InitialWaitingReason?.Trim(),
+                Notes = dto.InitialRepairNotes?.Trim(),
             });
             await _db.SaveChangesAsync();
 

@@ -31,6 +31,8 @@ namespace TamircimAPI.Models.DTOs.Device
         public DateTime? ReceivedAt { get; set; }
         public DateTime? DeliveryDate { get; set; }
         public string? Notes { get; set; }
+        public string? InitialWaitingReason { get; set; }
+        public string? InitialRepairNotes { get; set; }
     }
 
     public class UpdateDeviceDTO
