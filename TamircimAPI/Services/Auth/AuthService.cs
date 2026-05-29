@@ -33,6 +33,7 @@ namespace TamircimAPI.Services.Auth
                 FirstName = dto.FirstName.Trim(),
                 LastName = dto.LastName.Trim(),
                 Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
+                Branch = dto.Branch.Trim(),
                 Email = dto.Email.Trim().ToLowerInvariant(),
                 PasswordHash = hash,
                 PasswordSalt = salt,

@@ -8,9 +8,11 @@ namespace TamircimAPI.Models
         public int Id { get; set; }
         public int CustomerId { get; set; }
         public DeviceType DeviceType { get; set; }
+        public string DeviceName { get; set; } = string.Empty;
         public string Brand { get; set; } = string.Empty;
         public string Model { get; set; } = string.Empty;
         public string? SerialNumber { get; set; }
+        public string? ExtraFields { get; set; }
         public string FaultDescription { get; set; } = string.Empty;
         public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
         public DateTime? DeliveryDate { get; set; }
