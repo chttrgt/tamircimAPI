@@ -65,10 +65,13 @@ namespace TamircimAPI.Models.DTOs.Device
         public string DeviceName { get; set; } = string.Empty;
         public string Brand { get; set; } = string.Empty;
         public string Model { get; set; } = string.Empty;
+        public string? SerialNumber { get; set; }
         public DeviceType DeviceType { get; set; }
         public string DeviceTypeLabel { get; set; } = string.Empty;
         public string FaultDescription { get; set; } = string.Empty;
         public DateTime ReceivedAt { get; set; }
+        public bool IsDelivered { get; set; }
+        public DateTime? DeliveredAt { get; set; }
         public string? CurrentStatus { get; set; }
     }
 }

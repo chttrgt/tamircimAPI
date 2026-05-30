@@ -42,10 +42,13 @@ namespace TamircimAPI.Services.Device
                 DeviceName = d.DeviceName,
                 Brand = d.Brand,
                 Model = d.Model,
+                SerialNumber = d.SerialNumber,
                 DeviceType = d.DeviceType,
                 DeviceTypeLabel = GetDeviceTypeLabel(d.DeviceType),
                 FaultDescription = d.FaultDescription,
                 ReceivedAt = d.ReceivedAt,
+                IsDelivered = d.IsDelivered,
+                DeliveredAt = d.DeliveredAt,
                 CurrentStatus = d.RepairRecords
                     .OrderByDescending(r => r.CreatedAt)
                     .Select(r => GetStatusLabel(r.Status))
