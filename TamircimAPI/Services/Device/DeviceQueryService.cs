@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Data;
 using TamircimAPI.Models.DTOs.Device;
+using TamircimAPI.Models.DTOs.Repair;
 using TamircimAPI.Models.Enums;
 
 namespace TamircimAPI.Services.Device
@@ -25,35 +26,17 @@ namespace TamircimAPI.Services.Device
             {
                 var term = search.Trim();
                 query = query.Where(d =>
+                    d.DeviceCode.Contains(term) ||
                     d.Brand.Contains(term) ||
                     d.Model.Contains(term) ||
                     (d.SerialNumber != null && d.SerialNumber.Contains(term)));
             }
 
             var devices = await query
-                .OrderByDescending(d => d.ReceivedAt)
+                .OrderByDescending(d => d.CreatedAt)
                 .ToListAsync();
 
-            return devices.Select(d => new DeviceListDTO
-            {
-                Id = d.Id,
-                CustomerId = d.CustomerId,
-                CustomerFullName = d.Customer.FullName,
-                DeviceName = d.DeviceName,
-                Brand = d.Brand,
-                Model = d.Model,
-                SerialNumber = d.SerialNumber,
-                DeviceType = d.DeviceType,
-                DeviceTypeLabel = GetDeviceTypeLabel(d.DeviceType),
-                FaultDescription = d.FaultDescription,
-                ReceivedAt = d.ReceivedAt,
-                IsDelivered = d.IsDelivered,
-                DeliveredAt = d.DeliveredAt,
-                CurrentStatus = d.RepairRecords
-                    .OrderByDescending(r => r.CreatedAt)
-                    .Select(r => GetStatusLabel(r.Status))
-                    .FirstOrDefault()
-            });
+            return devices.Select(MapToListDTO);
         }
 
         public async Task<DeviceDTO?> GetByIdAsync(int id)
@@ -63,13 +46,32 @@ namespace TamircimAPI.Services.Device
                 .Include(x => x.RepairRecords)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
-            if (d == null) return null;
+            return d == null ? null : MapToDetailDTO(d);
+        }
+
+        public async Task<DeviceDTO?> GetByCodeAsync(string code)
+        {
+            var term = code.Trim();
+            if (string.IsNullOrEmpty(term)) return null;
+
+            var d = await _db.Devices
+                .Include(x => x.Customer)
+                .Include(x => x.RepairRecords)
+                .FirstOrDefaultAsync(x => x.DeviceCode.ToLower() == term.ToLower());
+
+            return d == null ? null : MapToDetailDTO(d);
+        }
+
+        private static DeviceDTO MapToDetailDTO(Models.Device d)
+        {
+            var latest = d.RepairRecords.OrderByDescending(r => r.ReceivedAt).FirstOrDefault();
 
             return new DeviceDTO
             {
                 Id = d.Id,
                 CustomerId = d.CustomerId,
                 CustomerFullName = d.Customer.FullName,
+                DeviceCode = d.DeviceCode,
                 DeviceType = d.DeviceType,
                 DeviceTypeLabel = GetDeviceTypeLabel(d.DeviceType),
                 DeviceName = d.DeviceName,
@@ -77,17 +79,104 @@ namespace TamircimAPI.Services.Device
                 Model = d.Model,
                 SerialNumber = d.SerialNumber,
                 ExtraFields = d.ExtraFields,
-                FaultDescription = d.FaultDescription,
-                ReceivedAt = d.ReceivedAt,
-                DeliveryDate = d.DeliveryDate,
-                IsDelivered = d.IsDelivered,
-                DeliveredAt = d.DeliveredAt,
                 Notes = d.Notes,
                 CreatedAt = d.CreatedAt,
-                CurrentStatus = d.RepairRecords
-                    .OrderByDescending(r => r.CreatedAt)
-                    .Select(r => GetStatusLabel(r.Status))
-                    .FirstOrDefault()
+                RepairCount = d.RepairRecords.Count,
+                LastReceivedAt = latest?.ReceivedAt,
+                CurrentStatus = latest != null ? GetStatusLabel(latest.Status) : null,
+                HasOpenTicket = d.RepairRecords.Any(r => !r.IsDelivered)
+            };
+        }
+
+        public async Task<IEnumerable<CustomerVisitDTO>> GetCustomerHistoryAsync(int customerId)
+        {
+            var devices = await _db.Devices
+                .Include(d => d.RepairRecords)
+                .Where(d => d.CustomerId == customerId)
+                .ToListAsync();
+
+            var visits = new List<CustomerVisitDTO>();
+
+            foreach (var d in devices)
+            {
+                var ordered = d.RepairRecords.OrderBy(r => r.ReceivedAt).ToList();
+                var total = ordered.Count;
+                for (var i = 0; i < ordered.Count; i++)
+                {
+                    var r = ordered[i];
+                    visits.Add(new CustomerVisitDTO
+                    {
+                        RepairRecordId = r.Id,
+                        DeviceId = d.Id,
+                        TicketNo = r.TicketNo,
+                        DeviceCode = d.DeviceCode,
+                        DeviceName = d.DeviceName,
+                        Brand = d.Brand,
+                        Model = d.Model,
+                        SerialNumber = d.SerialNumber,
+                        DeviceType = d.DeviceType,
+                        DeviceTypeLabel = GetDeviceTypeLabel(d.DeviceType),
+                        FaultDescription = r.FaultDescription,
+                        ReceivedAt = r.ReceivedAt,
+                        IsDelivered = r.IsDelivered,
+                        DeliveredAt = r.DeliveredAt,
+                        Status = r.Status,
+                        StatusLabel = GetStatusLabel(r.Status),
+                        VisitNo = i + 1,
+                        TotalVisits = total
+                    });
+                }
+            }
+
+            // En yeni geliş en üstte
+            return visits.OrderByDescending(v => v.ReceivedAt).ToList();
+        }
+
+        public async Task<SerialCheckResultDTO> CheckSerialAsync(string serialNumber, int? excludeDeviceId = null)
+        {
+            var term = serialNumber.Trim();
+            if (string.IsNullOrEmpty(term))
+                return new SerialCheckResultDTO { Exists = false };
+
+            var match = await _db.Devices
+                .Include(d => d.Customer)
+                .Where(d => d.SerialNumber != null && d.SerialNumber.ToLower() == term.ToLower())
+                .Where(d => excludeDeviceId == null || d.Id != excludeDeviceId.Value)
+                .OrderByDescending(d => d.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (match == null)
+                return new SerialCheckResultDTO { Exists = false };
+
+            return new SerialCheckResultDTO
+            {
+                Exists = true,
+                DeviceId = match.Id,
+                DeviceCode = match.DeviceCode,
+                CustomerId = match.CustomerId,
+                CustomerFullName = match.Customer.FullName
+            };
+        }
+
+        private static DeviceListDTO MapToListDTO(Models.Device d)
+        {
+            var latest = d.RepairRecords.OrderByDescending(r => r.ReceivedAt).FirstOrDefault();
+            return new DeviceListDTO
+            {
+                Id = d.Id,
+                CustomerId = d.CustomerId,
+                CustomerFullName = d.Customer.FullName,
+                DeviceCode = d.DeviceCode,
+                DeviceName = d.DeviceName,
+                Brand = d.Brand,
+                Model = d.Model,
+                SerialNumber = d.SerialNumber,
+                DeviceType = d.DeviceType,
+                DeviceTypeLabel = GetDeviceTypeLabel(d.DeviceType),
+                RepairCount = d.RepairRecords.Count,
+                LastReceivedAt = latest?.ReceivedAt,
+                CurrentStatus = latest != null ? GetStatusLabel(latest.Status) : null,
+                HasOpenTicket = d.RepairRecords.Any(r => !r.IsDelivered)
             };
         }
 
@@ -100,11 +189,11 @@ namespace TamircimAPI.Services.Device
             _ => "Bilinmiyor"
         };
 
-        private static string GetStatusLabel(Models.Enums.RepairStatus status) => status switch
+        private static string GetStatusLabel(RepairStatus status) => status switch
         {
-            Models.Enums.RepairStatus.Waiting => "Beklemede",
-            Models.Enums.RepairStatus.Repaired => "Onarıldı",
-            Models.Enums.RepairStatus.NotRepaired => "Onarılmadı",
+            RepairStatus.Waiting => "Beklemede",
+            RepairStatus.Repaired => "Onarıldı",
+            RepairStatus.NotRepaired => "Onarılmadı",
             _ => "Bilinmiyor"
         };
     }

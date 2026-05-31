@@ -3,6 +3,7 @@ using TamircimAPI.Data;
 using TamircimAPI.Models;
 using TamircimAPI.Models.DTOs.Repair;
 using TamircimAPI.Models.Enums;
+using TamircimAPI.Services.Common;
 
 namespace TamircimAPI.Services.Repair
 {
@@ -10,13 +11,16 @@ namespace TamircimAPI.Services.Repair
     {
         private readonly ApplicationDbContext _db;
         private readonly IRepairQueryService _query;
+        private readonly ICodeGenerator _codes;
 
-        public RepairCommandService(ApplicationDbContext db, IRepairQueryService query)
+        public RepairCommandService(ApplicationDbContext db, IRepairQueryService query, ICodeGenerator codes)
         {
             _db = db;
             _query = query;
+            _codes = codes;
         }
 
+        // Var olan bir cihaza yeni servis kaydı (geliş) açar.
         public async Task<RepairRecordDTO> CreateAsync(CreateRepairRecordDTO dto)
         {
             var deviceExists = await _db.Devices.AnyAsync(d => d.Id == dto.DeviceId);
@@ -28,6 +32,10 @@ namespace TamircimAPI.Services.Repair
             var record = new RepairRecord
             {
                 DeviceId = dto.DeviceId,
+                TicketNo = await _codes.NextTicketNoAsync(),
+                FaultDescription = dto.FaultDescription.Trim(),
+                ReceivedAt = dto.ReceivedAt ?? DateTime.UtcNow,
+                DeliveryDate = dto.DeliveryDate,
                 Status = dto.Status,
                 WorkDone = dto.WorkDone?.Trim(),
                 NotRepairedReason = dto.NotRepairedReason?.Trim(),
@@ -45,10 +53,15 @@ namespace TamircimAPI.Services.Repair
         public async Task<RepairRecordDTO> UpdateAsync(int id, UpdateRepairRecordDTO dto)
         {
             var record = await _db.RepairRecords.FirstOrDefaultAsync(r => r.Id == id)
-                ?? throw new KeyNotFoundException($"Arıza kaydı bulunamadı: {id}");
+                ?? throw new KeyNotFoundException($"Servis kaydı bulunamadı: {id}");
 
             ValidateStatusFields(dto.Status, dto.WorkDone, dto.NotRepairedReason, dto.WaitingReason);
 
+            if (!string.IsNullOrWhiteSpace(dto.FaultDescription))
+                record.FaultDescription = dto.FaultDescription.Trim();
+            if (dto.ReceivedAt.HasValue)
+                record.ReceivedAt = dto.ReceivedAt.Value;
+            record.DeliveryDate = dto.DeliveryDate;
             record.Status = dto.Status;
             record.WorkDone = dto.WorkDone?.Trim();
             record.NotRepairedReason = dto.NotRepairedReason?.Trim();
@@ -61,10 +74,42 @@ namespace TamircimAPI.Services.Repair
             return (await _query.GetByIdAsync(id))!;
         }
 
+        public async Task<RepairRecordDTO> MarkDeliveredAsync(int id, DateTime? deliveredAt = null)
+        {
+            var record = await _db.RepairRecords.FirstOrDefaultAsync(r => r.Id == id)
+                ?? throw new KeyNotFoundException($"Servis kaydı bulunamadı: {id}");
+
+            if (record.Status == RepairStatus.Waiting)
+                throw new ArgumentException("Beklemedeki bir kayıt teslim edilemez. Önce durumu güncelleyin.");
+
+            var ts = deliveredAt ?? DateTime.UtcNow;
+            record.IsDelivered = true;
+            record.DeliveredAt = ts;
+            record.DeliveryDate = ts;
+
+            await _db.SaveChangesAsync();
+
+            return (await _query.GetByIdAsync(id))!;
+        }
+
+        public async Task<RepairRecordDTO> UndoDeliveryAsync(int id)
+        {
+            var record = await _db.RepairRecords.FirstOrDefaultAsync(r => r.Id == id)
+                ?? throw new KeyNotFoundException($"Servis kaydı bulunamadı: {id}");
+
+            record.IsDelivered = false;
+            record.DeliveredAt = null;
+            record.DeliveryDate = null;
+
+            await _db.SaveChangesAsync();
+
+            return (await _query.GetByIdAsync(id))!;
+        }
+
         public async Task DeleteAsync(int id)
         {
             var record = await _db.RepairRecords.FirstOrDefaultAsync(r => r.Id == id)
-                ?? throw new KeyNotFoundException($"Arıza kaydı bulunamadı: {id}");
+                ?? throw new KeyNotFoundException($"Servis kaydı bulunamadı: {id}");
 
             record.IsDeleted = true;
             await _db.SaveChangesAsync();
@@ -77,9 +122,6 @@ namespace TamircimAPI.Services.Repair
 
             if (status == RepairStatus.NotRepaired && string.IsNullOrWhiteSpace(notRepairedReason))
                 throw new ArgumentException("Onarılmadı durumunda 'Onarılmama Sebebi' alanı zorunludur.");
-
-            if (status == RepairStatus.Waiting && string.IsNullOrWhiteSpace(waitingReason))
-                throw new ArgumentException("Beklemede durumunda 'Bekleme Sebebi' alanı zorunludur.");
         }
     }
 }

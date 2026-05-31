@@ -280,16 +280,17 @@ namespace TamircimAPI.Data
             modelBuilder.Entity<Device>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.DeviceCode).IsRequired().HasMaxLength(20);
                 entity.Property(e => e.Brand).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.Model).IsRequired().HasMaxLength(200);
                 entity.Property(e => e.SerialNumber).HasMaxLength(100);
-                entity.Property(e => e.FaultDescription).IsRequired().HasColumnType("text");
                 entity.Property(e => e.Notes).HasColumnType("text");
                 entity.Property(e => e.DeviceType).HasConversion<int>();
 
+                entity.HasIndex(e => e.DeviceCode).IsUnique();
                 entity.HasIndex(e => e.CustomerId);
                 entity.HasIndex(e => e.DeviceType);
-                entity.HasIndex(e => e.ReceivedAt);
+                entity.HasIndex(e => e.SerialNumber).HasFilter("\"SerialNumber\" IS NOT NULL");
 
                 entity.HasOne(e => e.Customer)
                     .WithMany(c => c.Devices)
@@ -320,14 +321,18 @@ namespace TamircimAPI.Data
             modelBuilder.Entity<RepairRecord>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.TicketNo).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.FaultDescription).IsRequired().HasColumnType("text");
                 entity.Property(e => e.Status).HasConversion<int>();
                 entity.Property(e => e.WorkDone).HasColumnType("text");
                 entity.Property(e => e.NotRepairedReason).HasColumnType("text");
                 entity.Property(e => e.WaitingReason).HasColumnType("text");
                 entity.Property(e => e.Notes).HasColumnType("text");
 
+                entity.HasIndex(e => e.TicketNo).IsUnique();
                 entity.HasIndex(e => e.DeviceId);
                 entity.HasIndex(e => e.Status);
+                entity.HasIndex(e => e.ReceivedAt);
                 entity.HasIndex(e => e.CreatedAt);
 
                 entity.HasOne(e => e.Device)

@@ -27,14 +27,21 @@ namespace TamircimAPI.Services.Repair
                 query = query.Where(r => r.Status == status.Value);
 
             return await query
-                .OrderByDescending(r => r.CreatedAt)
+                .OrderByDescending(r => r.ReceivedAt)
                 .Select(r => new RepairRecordListDTO
                 {
                     Id = r.Id,
                     DeviceId = r.DeviceId,
+                    TicketNo = r.TicketNo,
+                    DeviceCode = r.Device.DeviceCode,
                     DeviceBrand = r.Device.Brand,
                     DeviceModel = r.Device.Model,
                     CustomerFullName = r.Device.Customer.FirstName + " " + r.Device.Customer.LastName,
+                    FaultDescription = r.FaultDescription,
+                    ReceivedAt = r.ReceivedAt,
+                    DeliveryDate = r.DeliveryDate,
+                    IsDelivered = r.IsDelivered,
+                    DeliveredAt = r.DeliveredAt,
                     Status = r.Status,
                     StatusLabel = r.Status == RepairStatus.Waiting ? "Beklemede"
                         : r.Status == RepairStatus.Repaired ? "Onarıldı"
@@ -61,9 +68,16 @@ namespace TamircimAPI.Services.Repair
             {
                 Id = r.Id,
                 DeviceId = r.DeviceId,
+                TicketNo = r.TicketNo,
+                DeviceCode = r.Device.DeviceCode,
                 DeviceBrand = r.Device.Brand,
                 DeviceModel = r.Device.Model,
                 CustomerFullName = r.Device.Customer.FullName,
+                FaultDescription = r.FaultDescription,
+                ReceivedAt = r.ReceivedAt,
+                DeliveryDate = r.DeliveryDate,
+                IsDelivered = r.IsDelivered,
+                DeliveredAt = r.DeliveredAt,
                 Status = r.Status,
                 StatusLabel = r.Status == RepairStatus.Waiting ? "Beklemede"
                     : r.Status == RepairStatus.Repaired ? "Onarıldı"

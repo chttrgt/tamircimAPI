@@ -1,9 +1,9 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Data;
 using TamircimAPI.Models.DTOs.Device;
 using TamircimAPI.Models.Enums;
+using TamircimAPI.Services.Common;
 
 namespace TamircimAPI.Services.Device
 {
@@ -11,15 +11,22 @@ namespace TamircimAPI.Services.Device
     {
         private readonly ApplicationDbContext _db;
         private readonly IDeviceQueryService _query;
+        private readonly ICodeGenerator _codes;
         private readonly IHttpContextAccessor _http;
 
-        public DeviceCommandService(ApplicationDbContext db, IDeviceQueryService query, IHttpContextAccessor http)
+        public DeviceCommandService(
+            ApplicationDbContext db,
+            IDeviceQueryService query,
+            ICodeGenerator codes,
+            IHttpContextAccessor http)
         {
             _db = db;
             _query = query;
+            _codes = codes;
             _http = http;
         }
 
+        // Yeni fiziksel cihaz + ilk servis kaydını (geliş) birlikte oluşturur.
         public async Task<DeviceDTO> CreateAsync(CreateDeviceDTO dto)
         {
             var customerExists = await _db.Customers.AnyAsync(c => c.Id == dto.CustomerId);
@@ -31,15 +38,13 @@ namespace TamircimAPI.Services.Device
             var device = new Models.Device
             {
                 CustomerId = dto.CustomerId,
+                DeviceCode = await _codes.NextDeviceCodeAsync(),
                 DeviceType = deviceType,
                 DeviceName = dto.DeviceName.Trim(),
                 Brand = dto.Brand.Trim(),
                 Model = dto.Model.Trim(),
-                SerialNumber = dto.SerialNumber?.Trim(),
+                SerialNumber = string.IsNullOrWhiteSpace(dto.SerialNumber) ? null : dto.SerialNumber.Trim(),
                 ExtraFields = dto.ExtraFields,
-                FaultDescription = dto.FaultDescription.Trim(),
-                ReceivedAt = dto.ReceivedAt ?? DateTime.UtcNow,
-                DeliveryDate = dto.DeliveryDate,
                 Notes = dto.Notes?.Trim()
             };
 
@@ -49,6 +54,10 @@ namespace TamircimAPI.Services.Device
             _db.RepairRecords.Add(new Models.RepairRecord
             {
                 DeviceId = device.Id,
+                TicketNo = await _codes.NextTicketNoAsync(),
+                FaultDescription = dto.FaultDescription.Trim(),
+                ReceivedAt = dto.ReceivedAt ?? DateTime.UtcNow,
+                DeliveryDate = dto.DeliveryDate,
                 Status = RepairStatus.Waiting,
                 WaitingReason = dto.InitialWaitingReason?.Trim(),
                 Notes = dto.InitialRepairNotes?.Trim(),
@@ -58,6 +67,7 @@ namespace TamircimAPI.Services.Device
             return (await _query.GetByIdAsync(device.Id))!;
         }
 
+        // Yalnızca cihazın kalıcı (varlık) bilgilerini günceller.
         public async Task<DeviceDTO> UpdateAsync(int id, UpdateDeviceDTO dto)
         {
             var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == id)
@@ -66,42 +76,9 @@ namespace TamircimAPI.Services.Device
             device.DeviceName = dto.DeviceName.Trim();
             device.Brand = dto.Brand.Trim();
             device.Model = dto.Model.Trim();
-            device.SerialNumber = dto.SerialNumber?.Trim();
+            device.SerialNumber = string.IsNullOrWhiteSpace(dto.SerialNumber) ? null : dto.SerialNumber.Trim();
             device.ExtraFields = dto.ExtraFields;
-            device.FaultDescription = dto.FaultDescription.Trim();
-            device.DeliveryDate = dto.DeliveryDate;
-            if (device.IsDelivered && dto.DeliveryDate.HasValue)
-                device.DeliveredAt = dto.DeliveryDate;
             device.Notes = dto.Notes?.Trim();
-
-            await _db.SaveChangesAsync();
-
-            return (await _query.GetByIdAsync(id))!;
-        }
-
-        public async Task<DeviceDTO> MarkDeliveredAsync(int id, DateTime? deliveredAt = null)
-        {
-            var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == id)
-                ?? throw new KeyNotFoundException($"Cihaz bulunamadı: {id}");
-
-            var ts = deliveredAt ?? DateTime.UtcNow;
-            device.IsDelivered = true;
-            device.DeliveredAt = ts;
-            device.DeliveryDate = ts;
-
-            await _db.SaveChangesAsync();
-
-            return (await _query.GetByIdAsync(id))!;
-        }
-
-        public async Task<DeviceDTO> UndoDeliveryAsync(int id)
-        {
-            var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == id)
-                ?? throw new KeyNotFoundException($"Cihaz bulunamadı: {id}");
-
-            device.IsDelivered = false;
-            device.DeliveredAt = null;
-            device.DeliveryDate = null;
 
             await _db.SaveChangesAsync();
 

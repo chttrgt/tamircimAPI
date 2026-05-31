@@ -3,24 +3,27 @@ using TamircimAPI.Models.Interfaces;
 
 namespace TamircimAPI.Models
 {
+    // Fiziksel cihaz (asset). Ömür boyu tek satır; her getirilişte yeni satır AÇILMAZ.
+    // Bir cihazın birden fazla servis kaydı (RepairRecord) olabilir.
     public class Device : IAuditable, ISoftDeletable
     {
         public int Id { get; set; }
         public int CustomerId { get; set; }
+
+        // Dahili benzersiz kimlik (asset tag), örn. "CHZ-000123". Seri no olsun olmasın her cihazda bulunur.
+        public string DeviceCode { get; set; } = string.Empty;
+
         public DeviceType DeviceType { get; set; }
         public string DeviceName { get; set; } = string.Empty;
         public string Brand { get; set; } = string.Empty;
         public string Model { get; set; } = string.Empty;
         public string? SerialNumber { get; set; }
         public string? ExtraFields { get; set; }
-        public string FaultDescription { get; set; } = string.Empty;
-        public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
-        public DateTime? DeliveryDate { get; set; }
-        public bool IsDelivered { get; set; } = false;
-        public DateTime? DeliveredAt { get; set; }
+
+        // Cihazın kendisine ait kalıcı not (arızaya değil, cihaza dair).
         public string? Notes { get; set; }
 
-        // IAuditable
+        // IAuditable — CreatedAt = cihazın ilk kayıt tarihi
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         public int? CreatedByUserId { get; set; }

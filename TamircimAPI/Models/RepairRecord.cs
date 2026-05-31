@@ -3,10 +3,28 @@ using TamircimAPI.Models.Interfaces;
 
 namespace TamircimAPI.Models
 {
+    // Servis kaydı / iş emri. Cihazın TEK bir getirilişini (ziyaretini) temsil eder.
     public class RepairRecord : IAuditable, ISoftDeletable
     {
         public int Id { get; set; }
         public int DeviceId { get; set; }
+
+        // Müşteriye verilen iş emri numarası, örn. "25-000042". Otomatik, benzersiz.
+        public string TicketNo { get; set; } = string.Empty;
+
+        // Bu getirilişe ait arıza şikâyeti.
+        public string FaultDescription { get; set; } = string.Empty;
+
+        // Bu getirilişte cihazın alınma tarihi.
+        public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
+
+        // Söz verilen / planlanan teslim tarihi.
+        public DateTime? DeliveryDate { get; set; }
+
+        // Bu iş emri müşteriye teslim edildi mi?
+        public bool IsDelivered { get; set; } = false;
+        public DateTime? DeliveredAt { get; set; }
+
         public RepairStatus Status { get; set; } = RepairStatus.Waiting;
 
         // Onarıldıysa ne yapıldı

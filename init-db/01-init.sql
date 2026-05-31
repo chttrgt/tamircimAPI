@@ -96,20 +96,20 @@ CREATE INDEX "IX_Customers_IsDeleted" ON "Customers" ("IsDeleted") WHERE "IsDele
 -- CİHAZLAR
 -- DeviceType: 0=Beyaz Eşya, 1=Telefon, 2=Elektronik, 3=Diğer
 -- =============================================
+-- Kod üretimi için sequence'lar (yarış koşulsuz benzersiz kodlar)
+CREATE SEQUENCE IF NOT EXISTS device_code_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS ticket_no_seq START 1;
+
 CREATE TABLE "Devices" (
     "Id"                int4 GENERATED ALWAYS AS IDENTITY(START 1 INCREMENT 1) NOT NULL,
     "CustomerId"        int4 NOT NULL,
+    "DeviceCode"        varchar(20) NOT NULL,
     "DeviceType"        int4 NOT NULL DEFAULT 3,
     "DeviceName"        varchar(200) NOT NULL DEFAULT '',
     "Brand"             varchar(100) NOT NULL,
     "Model"             varchar(200) NOT NULL,
     "SerialNumber"      varchar(100) NULL,
     "ExtraFields"       text NULL,
-    "FaultDescription"  text NOT NULL,
-    "ReceivedAt"        timestamp DEFAULT timezone('utc', now()) NOT NULL,
-    "DeliveryDate"      timestamp NULL,
-    "IsDelivered"       bool DEFAULT false NOT NULL,
-    "DeliveredAt"       timestamp NULL,
     "Notes"             text NULL,
     "CreatedAt"         timestamp DEFAULT timezone('utc', now()) NOT NULL,
     "UpdatedAt"         timestamp DEFAULT timezone('utc', now()) NOT NULL,
@@ -124,9 +124,10 @@ CREATE TABLE "Devices" (
     CONSTRAINT "FK_Devices_UpdatedBy" FOREIGN KEY ("UpdatedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL,
     CONSTRAINT "FK_Devices_DeletedBy" FOREIGN KEY ("DeletedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL
 );
+CREATE UNIQUE INDEX "IX_Devices_DeviceCode" ON "Devices" ("DeviceCode");
 CREATE INDEX "IX_Devices_CustomerId" ON "Devices" ("CustomerId");
 CREATE INDEX "IX_Devices_DeviceType" ON "Devices" ("DeviceType");
-CREATE INDEX "IX_Devices_ReceivedAt" ON "Devices" ("ReceivedAt");
+CREATE INDEX "IX_Devices_SerialNumber" ON "Devices" ("SerialNumber") WHERE "SerialNumber" IS NOT NULL;
 CREATE INDEX "IX_Devices_IsDeleted" ON "Devices" ("IsDeleted") WHERE "IsDeleted" = false;
 
 -- =============================================
@@ -136,6 +137,12 @@ CREATE INDEX "IX_Devices_IsDeleted" ON "Devices" ("IsDeleted") WHERE "IsDeleted"
 CREATE TABLE "RepairRecords" (
     "Id"                  int4 GENERATED ALWAYS AS IDENTITY(START 1 INCREMENT 1) NOT NULL,
     "DeviceId"            int4 NOT NULL,
+    "TicketNo"            varchar(20) NOT NULL,
+    "FaultDescription"    text NOT NULL,
+    "ReceivedAt"          timestamp DEFAULT timezone('utc', now()) NOT NULL,
+    "DeliveryDate"        timestamp NULL,
+    "IsDelivered"         bool DEFAULT false NOT NULL,
+    "DeliveredAt"         timestamp NULL,
     "Status"              int4 NOT NULL DEFAULT 0,
     "WorkDone"            text NULL,
     "NotRepairedReason"   text NULL,
@@ -155,8 +162,10 @@ CREATE TABLE "RepairRecords" (
     CONSTRAINT "FK_RepairRecords_UpdatedBy" FOREIGN KEY ("UpdatedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL,
     CONSTRAINT "FK_RepairRecords_DeletedBy" FOREIGN KEY ("DeletedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL
 );
+CREATE UNIQUE INDEX "IX_RepairRecords_TicketNo" ON "RepairRecords" ("TicketNo");
 CREATE INDEX "IX_RepairRecords_DeviceId" ON "RepairRecords" ("DeviceId");
 CREATE INDEX "IX_RepairRecords_Status" ON "RepairRecords" ("Status");
+CREATE INDEX "IX_RepairRecords_ReceivedAt" ON "RepairRecords" ("ReceivedAt");
 CREATE INDEX "IX_RepairRecords_CreatedAt" ON "RepairRecords" ("CreatedAt");
 CREATE INDEX "IX_RepairRecords_IsDeleted" ON "RepairRecords" ("IsDeleted") WHERE "IsDeleted" = false;
 

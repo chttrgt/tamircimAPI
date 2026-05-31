@@ -34,6 +34,34 @@ namespace TamircimAPI.Controllers
             return Ok(result);
         }
 
+        // Cihaz koduna göre birebir bul — barkod okutma için.
+        [HttpGet("by-code")]
+        public async Task<IActionResult> GetByCode([FromQuery] string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return NotFound();
+            var result = await _query.GetByCodeAsync(code);
+            if (result == null) return NotFound();
+            return Ok(result);
+        }
+
+        // Bir müşterinin tüm servis geçmişi (tüm cihazlarındaki gelişler).
+        [HttpGet("/api/customers/{customerId:int}/history")]
+        public async Task<IActionResult> GetCustomerHistory(int customerId)
+        {
+            var result = await _query.GetCustomerHistoryAsync(customerId);
+            return Ok(result);
+        }
+
+        // Seri no çakışma kontrolü.
+        [HttpGet("check-serial")]
+        public async Task<IActionResult> CheckSerial([FromQuery] string serial, [FromQuery] int? excludeDeviceId = null)
+        {
+            if (string.IsNullOrWhiteSpace(serial))
+                return Ok(new SerialCheckResultDTO { Exists = false });
+            var result = await _query.CheckSerialAsync(serial, excludeDeviceId);
+            return Ok(result);
+        }
+
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateDeviceDTO dto)
         {
@@ -45,20 +73,6 @@ namespace TamircimAPI.Controllers
         public async Task<IActionResult> Update(int id, [FromBody] UpdateDeviceDTO dto)
         {
             var result = await _command.UpdateAsync(id, dto);
-            return Ok(result);
-        }
-
-        [HttpPatch("{id:int}/deliver")]
-        public async Task<IActionResult> MarkDelivered(int id, [FromBody] MarkDeliveredDTO? dto = null)
-        {
-            var result = await _command.MarkDeliveredAsync(id, dto?.DeliveredAt);
-            return Ok(result);
-        }
-
-        [HttpPatch("{id:int}/undeliver")]
-        public async Task<IActionResult> UndoDelivery(int id)
-        {
-            var result = await _command.UndoDeliveryAsync(id);
             return Ok(result);
         }
 

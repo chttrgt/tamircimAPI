@@ -40,7 +40,7 @@ namespace TamircimAPI.Services.Customer
                     DeviceCount = c.Devices.Count(d => !d.IsDeleted),
                     PrimaryDeviceType = c.Devices
                         .Where(d => !d.IsDeleted)
-                        .OrderByDescending(d => d.ReceivedAt)
+                        .OrderByDescending(d => d.CreatedAt)
                         .Select(d => d.DeviceType.ToString())
                         .FirstOrDefault()
                 })
