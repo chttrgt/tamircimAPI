@@ -8,18 +8,23 @@ namespace TamircimAPI.Services.Dashboard
     public class DashboardService : IDashboardService
     {
         private readonly ApplicationDbContext _db;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public DashboardService(ApplicationDbContext db)
+        public DashboardService(ApplicationDbContext db, IHttpContextAccessor httpContextAccessor)
         {
             _db = db;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<DashboardResponseDTO> GetDashboardAsync()
         {
             var now = DateTime.UtcNow;
 
+            // Cihazı olmayan müşterilerde varsayılan tür, giriş yapan kullanıcının branşı olsun.
+            var defaultDeviceType = await GetCurrentUserBranchAsync();
+
             var stats = await GetStatsAsync(now);
-            var recentCustomers = await GetRecentCustomersAsync();
+            var recentCustomers = await GetRecentCustomersAsync(defaultDeviceType);
             var overdueDevices = await GetOverdueDevicesAsync(now);
             var waitingForParts = await GetWaitingForPartsAsync(now);
 
@@ -58,7 +63,7 @@ namespace TamircimAPI.Services.Dashboard
             };
         }
 
-        private async Task<List<DashboardDeviceDTO>> GetRecentCustomersAsync()
+        private async Task<List<DashboardDeviceDTO>> GetRecentCustomersAsync(string defaultDeviceType)
         {
             var raw = await _db.Customers
                 .OrderByDescending(c => c.CreatedAt)
@@ -84,7 +89,7 @@ namespace TamircimAPI.Services.Dashboard
                 DeviceId = x.DeviceId ?? 0,
                 Brand = x.Brand,
                 Model = x.Model,
-                DeviceType = x.DeviceTypeInt.HasValue ? DeviceTypeLabel(x.DeviceTypeInt.Value) : "Diğer",
+                DeviceType = x.DeviceTypeInt.HasValue ? DeviceTypeLabel(x.DeviceTypeInt.Value) : defaultDeviceType,
                 CreatedAt = x.CreatedAt
             }).ToList();
         }
@@ -143,7 +148,7 @@ namespace TamircimAPI.Services.Dashboard
         {
             var raw = await _db.RepairRecords
                 .Where(r => !r.IsDelivered && r.Status == RepairStatus.Waiting)
-                .OrderBy(r => r.ReceivedAt)
+                .OrderByDescending(r => r.ReceivedAt)
                 .Take(5)
                 .Select(r => new
                 {
@@ -172,6 +177,20 @@ namespace TamircimAPI.Services.Dashboard
                 WaitingDays = d.WaitingSince.HasValue ? (int)(now - d.WaitingSince.Value).TotalDays : 0,
                 CreatedAt = d.CreatedAt
             }).ToList();
+        }
+
+        private async Task<string> GetCurrentUserBranchAsync()
+        {
+            var userIdStr = _httpContextAccessor.HttpContext?.Items["UserId"] as string;
+            if (!int.TryParse(userIdStr, out var userId))
+                return "Diğer";
+
+            var branch = await _db.Users
+                .Where(u => u.Id == userId)
+                .Select(u => u.Branch)
+                .FirstOrDefaultAsync();
+
+            return string.IsNullOrWhiteSpace(branch) ? "Diğer" : branch;
         }
 
         private static string DeviceTypeLabel(int value) => value switch
