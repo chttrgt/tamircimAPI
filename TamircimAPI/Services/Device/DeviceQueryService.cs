@@ -97,18 +97,36 @@ namespace TamircimAPI.Services.Device
 
             var visits = new List<CustomerVisitDTO>();
 
+            // Geçmiş = ZİYARET başına bir satır. Bir ziyaret, "Beklemede" (intake) kaydıyla
+            // başlar; sonraki "Onarıldı/Onarılmadı" kayıtları aynı ziyarete (durum güncellemesi)
+            // eklenir. Her ziyaret kendi son durumuyla gösterilir.
+            // Tüm işlem süreci ise cihaz detayındaki Servis Kayıtları'nda durur.
             foreach (var d in devices)
             {
                 var ordered = d.RepairRecords.OrderBy(r => r.ReceivedAt).ToList();
-                var total = ordered.Count;
-                for (var i = 0; i < ordered.Count; i++)
+                if (ordered.Count == 0) continue;
+
+                // Ziyaretlere grupla
+                var groups = new List<List<Models.RepairRecord>>();
+                foreach (var r in ordered)
                 {
-                    var r = ordered[i];
+                    if (r.Status == RepairStatus.Waiting || groups.Count == 0)
+                        groups.Add(new List<Models.RepairRecord> { r });
+                    else
+                        groups[^1].Add(r);
+                }
+
+                var totalVisits = groups.Count;
+                for (var gi = 0; gi < groups.Count; gi++)
+                {
+                    var first = groups[gi][0];      // geliş (intake)
+                    var last = groups[gi][^1];      // son işlem — durum buradan
+
                     visits.Add(new CustomerVisitDTO
                     {
-                        RepairRecordId = r.Id,
+                        RepairRecordId = last.Id,
                         DeviceId = d.Id,
-                        TicketNo = r.TicketNo,
+                        TicketNo = last.TicketNo,
                         DeviceCode = d.DeviceCode,
                         DeviceName = d.DeviceName,
                         Brand = d.Brand,
@@ -116,20 +134,28 @@ namespace TamircimAPI.Services.Device
                         SerialNumber = d.SerialNumber,
                         DeviceType = d.DeviceType,
                         DeviceTypeLabel = GetDeviceTypeLabel(d.DeviceType),
-                        FaultDescription = r.FaultDescription,
-                        ReceivedAt = r.ReceivedAt,
-                        IsDelivered = r.IsDelivered,
-                        DeliveredAt = r.DeliveredAt,
-                        Status = r.Status,
-                        StatusLabel = GetStatusLabel(r.Status),
-                        VisitNo = i + 1,
-                        TotalVisits = total
+                        FaultDescription = last.FaultDescription,
+                        ReceivedAt = first.ReceivedAt,     // geliş tarihi
+                        LastActionAt = last.ReceivedAt,    // son işlem tarihi
+                        IsDelivered = last.IsDelivered,
+                        DeliveredAt = last.DeliveredAt,
+                        Status = last.Status,
+                        StatusLabel = GetStatusLabel(last.Status),
+                        StatusDetail = last.Status switch
+                        {
+                            RepairStatus.Repaired => last.WorkDone,
+                            RepairStatus.NotRepaired => last.NotRepairedReason,
+                            _ => last.WaitingReason
+                        },
+                        Notes = last.Notes,
+                        VisitNo = gi + 1,
+                        TotalVisits = totalVisits
                     });
                 }
             }
 
-            // En yeni geliş en üstte
-            return visits.OrderByDescending(v => v.ReceivedAt).ToList();
+            // En son işlem yapılan ziyaret en üstte
+            return visits.OrderByDescending(v => v.LastActionAt).ToList();
         }
 
         public async Task<SerialCheckResultDTO> CheckSerialAsync(string serialNumber, int? excludeDeviceId = null)

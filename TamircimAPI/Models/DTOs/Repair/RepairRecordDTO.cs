@@ -98,12 +98,18 @@ namespace TamircimAPI.Models.DTOs.Repair
         public DeviceType DeviceType { get; set; }
         public string DeviceTypeLabel { get; set; } = string.Empty;
         public string FaultDescription { get; set; } = string.Empty;
+        // Ziyaretin ilk gelişi (intake) ve son işlem tarihi
         public DateTime ReceivedAt { get; set; }
+        public DateTime LastActionAt { get; set; }
         public bool IsDelivered { get; set; }
         public DateTime? DeliveredAt { get; set; }
         public RepairStatus Status { get; set; }
         public string StatusLabel { get; set; } = string.Empty;
-        // Bu cihazın kaçıncı gelişi ve toplam geliş sayısı
+        // Duruma göre neden/açıklama (yapılan iş / onarılamama / bekleme nedeni)
+        public string? StatusDetail { get; set; }
+        // Duruma ilişkin not
+        public string? Notes { get; set; }
+        // Bu cihazın kaçıncı ziyareti ve toplam ziyaret sayısı
         public int VisitNo { get; set; }
         public int TotalVisits { get; set; }
     }
