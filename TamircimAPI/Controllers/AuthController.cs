@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using TamircimAPI.Models.DTOs.Auth;
@@ -40,6 +42,20 @@ namespace TamircimAPI.Controllers
         {
             var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
             var result = await _authService.RefreshTokenAsync(dto.RefreshToken, ipAddress);
+            return Ok(result);
+        }
+
+        [HttpPut("profile")]
+        [Authorize]
+        [EnableRateLimiting("profile")]
+        public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileDTO dto)
+        {
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdClaim, out var userId))
+                return Unauthorized();
+
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var result = await _authService.UpdateProfileAsync(userId, dto, ipAddress);
             return Ok(result);
         }
 

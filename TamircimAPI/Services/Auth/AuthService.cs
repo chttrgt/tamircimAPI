@@ -65,6 +65,8 @@ namespace TamircimAPI.Services.Auth
                 RefreshToken = refreshToken,
                 UserId = user.Id,
                 FullName = user.FullName,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
                 Title = user.Title,
                 Email = user.Email
             };
@@ -99,6 +101,8 @@ namespace TamircimAPI.Services.Auth
                 RefreshToken = refreshToken,
                 UserId = user.Id,
                 FullName = user.FullName,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
                 Title = user.Title,
                 Email = user.Email
             };
@@ -139,8 +143,97 @@ namespace TamircimAPI.Services.Auth
                 RefreshToken = newRefreshToken,
                 UserId = token.User.Id,
                 FullName = token.User.FullName,
+                FirstName = token.User.FirstName,
+                LastName = token.User.LastName,
                 Title = token.User.Title,
                 Email = token.User.Email
+            };
+        }
+
+        public async Task<UpdateProfileResponseDTO> UpdateProfileAsync(int userId, UpdateProfileDTO dto, string ipAddress)
+        {
+            var user = await _db.Users.FindAsync(userId)
+                ?? throw new KeyNotFoundException("Kullanıcı bulunamadı.");
+
+            var originalEmail = user.Email;
+            var normalizedEmail = dto.Email.Trim().ToLowerInvariant();
+            if (normalizedEmail != originalEmail)
+            {
+                var emailTaken = await _db.Users.AnyAsync(u => u.Email == normalizedEmail && u.Id != userId);
+                if (emailTaken)
+                    throw new ArgumentException("Bu e-posta adresi zaten kayıtlı.");
+            }
+
+            bool passwordChanged = !string.IsNullOrWhiteSpace(dto.NewPassword);
+
+            // Şifre değişimi isteniyorsa mevcut şifreyi doğrula
+            if (passwordChanged)
+            {
+                if (string.IsNullOrWhiteSpace(dto.CurrentPassword))
+                    throw new ArgumentException("Mevcut şifre zorunludur.");
+                if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+                    throw new UnauthorizedAccessException("Mevcut şifre hatalı.");
+
+                var newSalt = BCrypt.Net.BCrypt.GenerateSalt(12);
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, newSalt);
+                user.PasswordSalt = newSalt;
+            }
+
+            user.FirstName = dto.FirstName.Trim();
+            user.LastName = dto.LastName.Trim();
+            user.Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim();
+            user.Email = normalizedEmail;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+
+            string? newAccessToken = null;
+            string? newRefreshToken = null;
+
+            // E-posta veya şifre değişti → tüm oturumları kapat, mevcut cihaza yeni token ver.
+            // E-posta: JWT claim'i güncellenmesi gerekir.
+            // Şifre: diğer cihazlardaki oturumlar geçersizleşmelidir.
+            if (normalizedEmail != originalEmail || passwordChanged)
+            {
+                var revokeReason = passwordChanged && normalizedEmail != originalEmail
+                    ? "Email and password changed"
+                    : passwordChanged ? "Password changed" : "Email changed";
+
+                var oldTokens = await _db.RefreshTokens
+                    .Where(t => t.UserId == userId && t.RevokedAt == null)
+                    .ToListAsync();
+                foreach (var rt in oldTokens)
+                {
+                    rt.RevokedAt = DateTime.UtcNow;
+                    rt.RevokedByIp = ipAddress;
+                    rt.RevokeReason = revokeReason;
+                }
+
+                newAccessToken = _tokenService.GenerateAccessToken(user);
+                var newRefreshTokenValue = _tokenService.GenerateRefreshToken();
+                var expireDays = int.Parse(_configuration["Jwt:RefreshTokenExpireDays"] ?? "7");
+                _db.RefreshTokens.Add(new RefreshToken
+                {
+                    UserId = user.Id,
+                    Token = newRefreshTokenValue,
+                    ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
+                    CreatedByIp = ipAddress,
+                });
+                await _db.SaveChangesAsync();
+                newRefreshToken = newRefreshTokenValue;
+            }
+
+            return new UpdateProfileResponseDTO
+            {
+                UserId = user.Id,
+                FullName = user.FullName,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Title = user.Title,
+                Email = user.Email,
+                Branch = user.Branch,
+                NewAccessToken = newAccessToken,
+                NewRefreshToken = newRefreshToken,
             };
         }
 
