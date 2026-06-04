@@ -21,9 +21,14 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> List(int deviceId)
+        public async Task<IActionResult> List(
+            int deviceId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 30)
         {
-            var result = await _service.GetByDeviceAsync(deviceId);
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 30;
+            var result = await _service.GetByDeviceAsync(deviceId, page, pageSize);
             return Ok(result);
         }
 

@@ -17,14 +17,24 @@ namespace TamircimAPI.Services.Device
             _storage = storage;
         }
 
-        public async Task<List<DevicePhotoDTO>> GetByDeviceAsync(int deviceId)
+        public async Task<DevicePhotoPagedDTO> GetByDeviceAsync(int deviceId, int page, int pageSize)
         {
-            var photos = await _db.DevicePhotos
+            var query = _db.DevicePhotos
                 .Where(p => p.DeviceId == deviceId)
-                .OrderByDescending(p => p.CreatedAt)
+                .OrderByDescending(p => p.CreatedAt);
+
+            var total = await query.CountAsync();
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return photos.Select(ToDto).ToList();
+            return new DevicePhotoPagedDTO
+            {
+                Items = items.Select(ToDto).ToList(),
+                Total = total,
+                HasMore = page * pageSize < total,
+            };
         }
 
         public async Task<DevicePhotoDTO> UploadAsync(

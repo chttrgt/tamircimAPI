@@ -4,7 +4,7 @@ namespace TamircimAPI.Services.Device
 {
     public interface IDevicePhotoService
     {
-        Task<List<DevicePhotoDTO>> GetByDeviceAsync(int deviceId);
+        Task<DevicePhotoPagedDTO> GetByDeviceAsync(int deviceId, int page, int pageSize);
 
         // İstemci sıkıştırılmış ana görsel + thumbnail yükler (EXIF istemcide temizlenir).
         Task<DevicePhotoDTO> UploadAsync(

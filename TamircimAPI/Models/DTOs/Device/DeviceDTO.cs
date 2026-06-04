@@ -24,6 +24,7 @@ namespace TamircimAPI.Models.DTOs.Device
         public DateTime? LastReceivedAt { get; set; }
         public string? CurrentStatus { get; set; }
         public bool HasOpenTicket { get; set; }
+        public int PhotoCount { get; set; }
     }
 
     // Yeni cihaz + ilk servis kaydını birlikte oluşturur.

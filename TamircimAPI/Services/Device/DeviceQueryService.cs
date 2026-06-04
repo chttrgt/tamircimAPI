@@ -46,7 +46,11 @@ namespace TamircimAPI.Services.Device
                 .Include(x => x.RepairRecords)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
-            return d == null ? null : MapToDetailDTO(d);
+            if (d == null) return null;
+
+            var dto = MapToDetailDTO(d);
+            dto.PhotoCount = await _db.DevicePhotos.CountAsync(p => p.DeviceId == id);
+            return dto;
         }
 
         public async Task<DeviceDTO?> GetByCodeAsync(string code)
@@ -59,7 +63,11 @@ namespace TamircimAPI.Services.Device
                 .Include(x => x.RepairRecords)
                 .FirstOrDefaultAsync(x => x.DeviceCode.ToLower() == term.ToLower());
 
-            return d == null ? null : MapToDetailDTO(d);
+            if (d == null) return null;
+
+            var dto = MapToDetailDTO(d);
+            dto.PhotoCount = await _db.DevicePhotos.CountAsync(p => p.DeviceId == d.Id);
+            return dto;
         }
 
         private static DeviceDTO MapToDetailDTO(Models.Device d)
