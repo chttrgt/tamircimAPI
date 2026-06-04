@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using TamircimAPI.Authorization;
 using TamircimAPI.Models.DTOs.Device;
 using TamircimAPI.Services.Device;
 
@@ -34,6 +35,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPost]
+        [HasPermission(Permissions.PhotosManage)]
         [EnableRateLimiting("profile")]
         [RequestSizeLimit(MaxUploadBytes)]
         public async Task<IActionResult> Upload(
@@ -69,6 +71,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpDelete("{photoId:int}")]
+        [HasPermission(Permissions.PhotosManage)]
         public async Task<IActionResult> Delete(int deviceId, int photoId)
         {
             await _service.DeleteAsync(deviceId, photoId);
@@ -77,6 +80,7 @@ namespace TamircimAPI.Controllers
 
         // Toplu silme — DELETE gövdesi bazı ara katmanlarda düşürüldüğünden POST.
         [HttpPost("bulk-delete")]
+        [HasPermission(Permissions.PhotosManage)]
         public async Task<IActionResult> BulkDelete(int deviceId, [FromBody] BulkDeletePhotosDTO body)
         {
             if (body?.Ids == null || body.Ids.Count == 0)

@@ -26,6 +26,12 @@ namespace TamircimAPI.Models.DTOs.Auth
         public string LastName { get; set; } = string.Empty;
         public string? Title { get; set; }
         public string Email { get; set; } = string.Empty;
+        // "Owner" | "Employee" — istemci sahibe özel ekranları (personel) buna göre gösterir.
+        public string Role { get; set; } = string.Empty;
+        // Çalışanın sahip olduğu izinler (Sahip için boş — örtük tüm izinler).
+        public List<string> Permissions { get; set; } = new();
+        // true ise istemci, app'e girmeden önce zorunlu şifre değişimi ekranı gösterir.
+        public bool MustChangePassword { get; set; }
     }
 
     public class RefreshTokenDTO

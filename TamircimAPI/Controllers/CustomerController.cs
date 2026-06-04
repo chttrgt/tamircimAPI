@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TamircimAPI.Authorization;
 using TamircimAPI.Models.DTOs.Customer;
 using TamircimAPI.Services.Customer;
 
@@ -40,6 +41,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPost]
+        [HasPermission(Permissions.CustomersCreate)]
         public async Task<IActionResult> Create([FromBody] CreateCustomerDTO dto)
         {
             var result = await _command.CreateAsync(dto);
@@ -47,6 +49,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPut("{id:int}")]
+        [HasPermission(Permissions.CustomersEdit)]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDTO dto)
         {
             var result = await _command.UpdateAsync(id, dto);
@@ -54,6 +57,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpDelete("{id:int}")]
+        [HasPermission(Permissions.CustomersDelete)]
         public async Task<IActionResult> Delete(int id)
         {
             await _command.DeleteAsync(id);

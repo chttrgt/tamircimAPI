@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TamircimAPI.Authorization;
 using TamircimAPI.Models.DTOs.Device;
 using TamircimAPI.Services.Device;
 
@@ -63,6 +64,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPost]
+        [HasPermission(Permissions.DevicesCreate)]
         public async Task<IActionResult> Create([FromBody] CreateDeviceDTO dto)
         {
             var result = await _command.CreateAsync(dto);
@@ -70,6 +72,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPut("{id:int}")]
+        [HasPermission(Permissions.DevicesEdit)]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateDeviceDTO dto)
         {
             var result = await _command.UpdateAsync(id, dto);
@@ -77,6 +80,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpDelete("{id:int}")]
+        [HasPermission(Permissions.DevicesDelete)]
         public async Task<IActionResult> Delete(int id)
         {
             await _command.DeleteAsync(id);

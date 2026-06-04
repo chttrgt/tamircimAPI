@@ -183,6 +183,7 @@ namespace TamircimAPI.Data
         #region KULLANICI
         public DbSet<User> Users { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
+        public DbSet<UserPermission> UserPermissions { get; set; }
         #endregion
 
         #region MÜŞTERİ
@@ -224,7 +225,24 @@ namespace TamircimAPI.Data
                 entity.Property(e => e.Title).HasMaxLength(200);
                 entity.Property(e => e.PasswordHash).IsRequired();
                 entity.Property(e => e.PasswordSalt).IsRequired();
+                entity.Property(e => e.Role).HasConversion<int>();
                 entity.Ignore(e => e.FullName);
+            });
+            #endregion
+
+            #region UserPermission
+            modelBuilder.Entity<UserPermission>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Permission).IsRequired().HasMaxLength(100);
+
+                entity.HasOne(e => e.User)
+                    .WithMany(u => u.Permissions)
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Aynı kullanıcıya aynı izin iki kez verilemez.
+                entity.HasIndex(e => new { e.UserId, e.Permission }).IsUnique();
             });
             #endregion
 

@@ -21,6 +21,7 @@ using TamircimAPI.Services.Dashboard;
 using TamircimAPI.Services.Customer;
 using TamircimAPI.Services.Device;
 using TamircimAPI.Services.Repair;
+using TamircimAPI.Services.Staff;
 using TamircimAPI.Services.Token;
 using TamircimAPI.Validators;
 using FluentValidation;
@@ -129,6 +130,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Servis Kayıtları
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IStaffService, StaffService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICodeGenerator, CodeGenerator>();
 builder.Services.AddScoped<ICustomerQueryService, CustomerQueryService>();

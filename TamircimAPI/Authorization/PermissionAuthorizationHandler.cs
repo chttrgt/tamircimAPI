@@ -1,27 +1,31 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using TamircimAPI.Models.Enums;
 
 namespace TamircimAPI.Authorization
 {
     public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionRequirement>
     {
-        private readonly IHttpContextAccessor _httpContextAccessor;
-
-        public PermissionAuthorizationHandler(IHttpContextAccessor httpContextAccessor)
-        {
-            _httpContextAccessor = httpContextAccessor;
-        }
-
         protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
         {
             var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier);
-
             if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out _))
-                return Task.CompletedTask;
+                return Task.CompletedTask; // kimlik yok → izin verme
 
-            // Şimdilik tüm kimlik doğrulanmış kullanıcılar tüm izinlere sahip
-            // İleride rol bazlı yetki eklenebilir
-            context.Succeed(requirement);
+            // Sahip tüm izinlere örtük sahiptir.
+            if (context.User.IsInRole(nameof(UserRole.Owner)))
+            {
+                context.Succeed(requirement);
+                return Task.CompletedTask;
+            }
+
+            // Çalışan: gerekli izin token'daki "permission" claim'lerinde var mı?
+            var hasPermission = context.User
+                .FindAll("permission")
+                .Any(c => c.Value == requirement.Permission);
+
+            if (hasPermission)
+                context.Succeed(requirement);
 
             return Task.CompletedTask;
         }

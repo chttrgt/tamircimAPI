@@ -3,6 +3,7 @@ using TamircimAPI.Data;
 using TamircimAPI.Exceptions;
 using TamircimAPI.Models;
 using TamircimAPI.Models.DTOs.Auth;
+using TamircimAPI.Models.Enums;
 using TamircimAPI.Services.Token;
 
 namespace TamircimAPI.Services.Auth
@@ -19,6 +20,23 @@ namespace TamircimAPI.Services.Auth
             _tokenService = tokenService;
             _configuration = configuration;
         }
+
+        // LoginResponseDTO'yu tek yerden kurar. Çağıran, user.Permissions'ı YÜKLEMİŞ
+        // olmalıdır (Include) — yoksa izinler boş döner.
+        private static LoginResponseDTO BuildLoginResponse(User user, string accessToken, string refreshToken) => new()
+        {
+            AccessToken = accessToken,
+            RefreshToken = refreshToken,
+            UserId = user.Id,
+            FullName = user.FullName,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Title = user.Title,
+            Email = user.Email,
+            Role = user.Role.ToString(),
+            Permissions = user.Permissions.Select(p => p.Permission).ToList(),
+            MustChangePassword = user.MustChangePassword,
+        };
 
         public Task<bool> IsInitializedAsync() => _db.Users.AnyAsync();
 
@@ -49,6 +67,8 @@ namespace TamircimAPI.Services.Auth
                 PasswordHash = hash,
                 PasswordSalt = salt,
                 IsActive = true,
+                // İlk kayıt = dükkân sahibi → tüm izinlere örtük sahip.
+                Role = UserRole.Owner,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
             };
@@ -70,22 +90,13 @@ namespace TamircimAPI.Services.Auth
 
             await _db.SaveChangesAsync();
 
-            return new LoginResponseDTO
-            {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                UserId = user.Id,
-                FullName = user.FullName,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Title = user.Title,
-                Email = user.Email
-            };
+            return BuildLoginResponse(user, accessToken, refreshToken);
         }
 
         public async Task<LoginResponseDTO> LoginAsync(LoginDTO dto, string ipAddress)
         {
             var user = await _db.Users
+                .Include(u => u.Permissions)
                 .FirstOrDefaultAsync(u => u.Email == dto.Email && u.IsActive);
 
             if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
@@ -106,23 +117,14 @@ namespace TamircimAPI.Services.Auth
 
             await _db.SaveChangesAsync();
 
-            return new LoginResponseDTO
-            {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                UserId = user.Id,
-                FullName = user.FullName,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Title = user.Title,
-                Email = user.Email
-            };
+            return BuildLoginResponse(user, accessToken, refreshToken);
         }
 
         public async Task<LoginResponseDTO> RefreshTokenAsync(string refreshToken, string ipAddress)
         {
             var token = await _db.RefreshTokens
                 .Include(t => t.User)
+                    .ThenInclude(u => u.Permissions)
                 .FirstOrDefaultAsync(t => t.Token == refreshToken);
 
             if (token == null || !token.IsActive)
@@ -148,22 +150,16 @@ namespace TamircimAPI.Services.Auth
 
             var accessToken = _tokenService.GenerateAccessToken(token.User);
 
-            return new LoginResponseDTO
-            {
-                AccessToken = accessToken,
-                RefreshToken = newRefreshToken,
-                UserId = token.User.Id,
-                FullName = token.User.FullName,
-                FirstName = token.User.FirstName,
-                LastName = token.User.LastName,
-                Title = token.User.Title,
-                Email = token.User.Email
-            };
+            return BuildLoginResponse(token.User, accessToken, newRefreshToken);
         }
 
         public async Task<UpdateProfileResponseDTO> UpdateProfileAsync(int userId, UpdateProfileDTO dto, string ipAddress)
         {
-            var user = await _db.Users.FindAsync(userId)
+            // İzinleri de yükle: e-posta/şifre değişince yeni token üretilirse izin
+            // claim'leri kaybolmasın.
+            var user = await _db.Users
+                .Include(u => u.Permissions)
+                .FirstOrDefaultAsync(u => u.Id == userId)
                 ?? throw new KeyNotFoundException("Kullanıcı bulunamadı.");
 
             var originalEmail = user.Email;
@@ -188,6 +184,8 @@ namespace TamircimAPI.Services.Auth
                 var newSalt = BCrypt.Net.BCrypt.GenerateSalt(12);
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, newSalt);
                 user.PasswordSalt = newSalt;
+                // Çalışan geçici şifresini değiştirdi → zorunlu değişim bayrağı kalkar.
+                user.MustChangePassword = false;
             }
 
             user.FirstName = dto.FirstName.Trim();

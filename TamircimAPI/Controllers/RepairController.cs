@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TamircimAPI.Authorization;
 using TamircimAPI.Models.DTOs.Repair;
 using TamircimAPI.Models.Enums;
 using TamircimAPI.Services.Repair;
@@ -36,6 +37,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPost]
+        [HasPermission(Permissions.RepairsCreate)]
         public async Task<IActionResult> Create([FromBody] CreateRepairRecordDTO dto)
         {
             var result = await _command.CreateAsync(dto);
@@ -43,6 +45,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPut("{id:int}")]
+        [HasPermission(Permissions.RepairsEdit)]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateRepairRecordDTO dto)
         {
             var result = await _command.UpdateAsync(id, dto);
@@ -50,6 +53,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPatch("{id:int}/deliver")]
+        [HasPermission(Permissions.RepairsEdit)]
         public async Task<IActionResult> MarkDelivered(int id, [FromBody] MarkDeliveredDTO? dto = null)
         {
             var result = await _command.MarkDeliveredAsync(id, dto?.DeliveredAt);
@@ -57,6 +61,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPatch("{id:int}/undeliver")]
+        [HasPermission(Permissions.RepairsEdit)]
         public async Task<IActionResult> UndoDelivery(int id)
         {
             var result = await _command.UndoDeliveryAsync(id);
@@ -64,6 +69,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpDelete("{id:int}")]
+        [HasPermission(Permissions.RepairsDelete)]
         public async Task<IActionResult> Delete(int id)
         {
             await _command.DeleteAsync(id);

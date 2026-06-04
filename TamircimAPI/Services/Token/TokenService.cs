@@ -25,13 +25,19 @@ namespace TamircimAPI.Services.Token
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            var claims = new[]
+            var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
                 new Claim(ClaimTypes.Name, user.FullName),
+                new Claim(ClaimTypes.Role, user.Role.ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
+
+            // Çalışanın atanmış izinleri token'a gömülür (Sahip için gerekmez —
+            // handler Owner rolünü görünce zaten tüm izinleri geçirir).
+            foreach (var perm in user.Permissions)
+                claims.Add(new Claim("permission", perm.Permission));
 
             var expireMinutes = int.Parse(_configuration["Jwt:AccessTokenExpireMinutes"] ?? "15");
 
