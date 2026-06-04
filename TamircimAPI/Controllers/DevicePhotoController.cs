@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using TamircimAPI.Models.DTOs.Device;
 using TamircimAPI.Services.Device;
 
 namespace TamircimAPI.Controllers
@@ -72,6 +73,17 @@ namespace TamircimAPI.Controllers
         {
             await _service.DeleteAsync(deviceId, photoId);
             return NoContent();
+        }
+
+        // Toplu silme — DELETE gövdesi bazı ara katmanlarda düşürüldüğünden POST.
+        [HttpPost("bulk-delete")]
+        public async Task<IActionResult> BulkDelete(int deviceId, [FromBody] BulkDeletePhotosDTO body)
+        {
+            if (body?.Ids == null || body.Ids.Count == 0)
+                return BadRequest(new { message = "Silinecek görsel seçilmedi." });
+
+            var deleted = await _service.DeleteManyAsync(deviceId, body.Ids);
+            return Ok(new { deleted });
         }
     }
 }

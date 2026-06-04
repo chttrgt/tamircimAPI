@@ -16,5 +16,8 @@ namespace TamircimAPI.Services.Device
 
         // Soft-delete (hibrit: GC görevi retention sonrası diskten kalıcı siler).
         Task DeleteAsync(int deviceId, int photoId);
+
+        // Birden fazla görseli toplu soft-delete eder. Silinen kayıt sayısını döner.
+        Task<int> DeleteManyAsync(int deviceId, IEnumerable<int> photoIds);
     }
 }

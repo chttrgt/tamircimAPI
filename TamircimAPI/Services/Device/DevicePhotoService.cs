@@ -97,6 +97,22 @@ namespace TamircimAPI.Services.Device
             await _db.SaveChangesAsync();
         }
 
+        public async Task<int> DeleteManyAsync(int deviceId, IEnumerable<int> photoIds)
+        {
+            var ids = photoIds.Distinct().ToList();
+            if (ids.Count == 0) return 0;
+
+            var photos = await _db.DevicePhotos
+                .Where(p => p.DeviceId == deviceId && ids.Contains(p.Id))
+                .ToListAsync();
+
+            foreach (var p in photos)
+                p.IsDeleted = true; // GC görevi retention sonrası diskten kalıcı siler
+
+            await _db.SaveChangesAsync();
+            return photos.Count;
+        }
+
         // Akışı belleğe alır + gerçekten resim mi diye magic-byte doğrular (JPEG/PNG).
         private static async Task<byte[]> ReadAndValidateAsync(Stream stream, CancellationToken ct)
         {

@@ -17,6 +17,10 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
+      # Görseller container içinde /app/uploads'a yazılır. Bind mount olmadan
+      # her `up --build`/`down` sonrası dosyalar silinir, DB kayıtları kalır →
+      # liste gelir ama resimler 404 olur. Bu mount dosyaları kalıcı kılar.
+      - ./uploads:/app/uploads
     restart: unless-stopped
 
   postgres:
