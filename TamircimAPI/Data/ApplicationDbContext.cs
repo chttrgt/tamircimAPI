@@ -12,6 +12,17 @@ namespace TamircimAPI.Data
         public static string TurkishLower(string input) =>
             throw new NotSupportedException("Bu metod sadece EF Core LINQ sorgularında kullanılır.");
 
+        // Optimistic concurrency: PostgreSQL'in sistem kolonu xmin'i satır sürümü
+        // olarak kullanır. Ekstra kolon/migration gerekmez — xmin her satırda
+        // zaten vardır ve her UPDATE'te değişir. Eşzamanlı iki yazım aynı satıra
+        // çakışırsa ikincinin UPDATE'i 0 satır etkiler → DbUpdateConcurrencyException.
+        private static void UseXminConcurrency(
+            Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder entity) =>
+            entity.Property<uint>("xmin")
+                .HasColumnType("xid")
+                .ValueGeneratedOnAddOrUpdate()
+                .IsRowVersion();
+
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IHttpContextAccessor? httpContextAccessor = null)
             : base(options)
         {
@@ -245,6 +256,7 @@ namespace TamircimAPI.Data
             modelBuilder.Entity<Customer>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                UseXminConcurrency(entity); // optimistic concurrency (xmin)
                 entity.Property(e => e.FirstName).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.LastName).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.NationalId).HasMaxLength(11);
@@ -284,6 +296,7 @@ namespace TamircimAPI.Data
             modelBuilder.Entity<Device>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                UseXminConcurrency(entity); // optimistic concurrency (xmin)
                 entity.Property(e => e.DeviceCode).IsRequired().HasMaxLength(20);
                 entity.Property(e => e.Brand).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.Model).IsRequired().HasMaxLength(200);
@@ -325,6 +338,7 @@ namespace TamircimAPI.Data
             modelBuilder.Entity<RepairRecord>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                UseXminConcurrency(entity); // optimistic concurrency (xmin)
                 entity.Property(e => e.TicketNo).IsRequired().HasMaxLength(20);
                 entity.Property(e => e.FaultDescription).IsRequired().HasColumnType("text");
                 entity.Property(e => e.Status).HasConversion<int>();
@@ -368,6 +382,7 @@ namespace TamircimAPI.Data
             modelBuilder.Entity<DevicePhoto>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                UseXminConcurrency(entity); // optimistic concurrency (xmin)
                 entity.Property(e => e.FileName).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.ThumbnailFileName).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.ContentType).IsRequired().HasMaxLength(100);

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Exceptions;
 
 namespace TamircimAPI.Middleware
@@ -64,6 +65,14 @@ namespace TamircimAPI.Middleware
                     errorResponse.Message = "İstenen kaynak bulunamadı.";
                     errorResponse.Code = "NOT_FOUND";
                     _logger.LogWarning("Not found. Path: {Path}", context.Request.Path);
+                    break;
+
+                // Optimistic concurrency: kayıt biz işlerken başkası değiştirdi/sildi.
+                case DbUpdateConcurrencyException:
+                    response.StatusCode = (int)HttpStatusCode.Conflict;
+                    errorResponse.Message = "Bu kayıt başka bir işlem tarafından değiştirildi. Lütfen yenileyip tekrar deneyin.";
+                    errorResponse.Code = "CONCURRENCY_CONFLICT";
+                    _logger.LogWarning("Concurrency conflict. Path: {Path}", context.Request.Path);
                     break;
 
                 default:

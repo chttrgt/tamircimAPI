@@ -27,6 +27,10 @@ namespace TamircimAPI.Services.Device
         }
 
         // Yeni fiziksel cihaz + ilk servis kaydını (geliş) birlikte oluşturur.
+        // İki kayıt tek bir transaction'da yazılır: cihaz oluşup servis kaydı
+        // yazılamazsa hiçbiri kalıcı olmaz (atomiklik) — yetim cihaz oluşmaz.
+        // EnableRetryOnFailure açık olduğundan manuel transaction execution
+        // strategy ile sarılmalıdır (aksi halde EF Core hata fırlatır).
         public async Task<DeviceDTO> CreateAsync(CreateDeviceDTO dto)
         {
             var customerExists = await _db.Customers.AnyAsync(c => c.Id == dto.CustomerId);
@@ -35,36 +39,45 @@ namespace TamircimAPI.Services.Device
 
             var deviceType = await ResolveDeviceTypeFromUserBranchAsync();
 
-            var device = new Models.Device
+            var strategy = _db.Database.CreateExecutionStrategy();
+            var deviceId = await strategy.ExecuteAsync(async () =>
             {
-                CustomerId = dto.CustomerId,
-                DeviceCode = await _codes.NextDeviceCodeAsync(),
-                DeviceType = deviceType,
-                DeviceName = dto.DeviceName.Trim(),
-                Brand = dto.Brand.Trim(),
-                Model = dto.Model.Trim(),
-                SerialNumber = string.IsNullOrWhiteSpace(dto.SerialNumber) ? null : dto.SerialNumber.Trim(),
-                ExtraFields = dto.ExtraFields,
-                Notes = dto.Notes?.Trim()
-            };
+                await using var tx = await _db.Database.BeginTransactionAsync();
 
-            _db.Devices.Add(device);
-            await _db.SaveChangesAsync();
+                var device = new Models.Device
+                {
+                    CustomerId = dto.CustomerId,
+                    DeviceCode = await _codes.NextDeviceCodeAsync(),
+                    DeviceType = deviceType,
+                    DeviceName = dto.DeviceName.Trim(),
+                    Brand = dto.Brand.Trim(),
+                    Model = dto.Model.Trim(),
+                    SerialNumber = string.IsNullOrWhiteSpace(dto.SerialNumber) ? null : dto.SerialNumber.Trim(),
+                    ExtraFields = dto.ExtraFields,
+                    Notes = dto.Notes?.Trim()
+                };
 
-            _db.RepairRecords.Add(new Models.RepairRecord
-            {
-                DeviceId = device.Id,
-                TicketNo = await _codes.NextTicketNoAsync(),
-                FaultDescription = dto.FaultDescription.Trim(),
-                ReceivedAt = dto.ReceivedAt ?? DateTime.UtcNow,
-                DeliveryDate = dto.DeliveryDate,
-                Status = RepairStatus.Waiting,
-                WaitingReason = dto.InitialWaitingReason?.Trim(),
-                Notes = dto.InitialRepairNotes?.Trim(),
+                _db.Devices.Add(device);
+                await _db.SaveChangesAsync();
+
+                _db.RepairRecords.Add(new Models.RepairRecord
+                {
+                    DeviceId = device.Id,
+                    TicketNo = await _codes.NextTicketNoAsync(),
+                    FaultDescription = dto.FaultDescription.Trim(),
+                    ReceivedAt = dto.ReceivedAt ?? DateTime.UtcNow,
+                    DeliveryDate = dto.DeliveryDate,
+                    Status = RepairStatus.Waiting,
+                    WaitingReason = dto.InitialWaitingReason?.Trim(),
+                    Notes = dto.InitialRepairNotes?.Trim(),
+                });
+                await _db.SaveChangesAsync();
+
+                await tx.CommitAsync();
+                return device.Id;
             });
-            await _db.SaveChangesAsync();
 
-            return (await _query.GetByIdAsync(device.Id))!;
+            return (await _query.GetByIdAsync(deviceId))!;
         }
 
         // Yalnızca cihazın kalıcı (varlık) bilgilerini günceller.
