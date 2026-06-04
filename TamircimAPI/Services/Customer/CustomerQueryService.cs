@@ -13,7 +13,7 @@ namespace TamircimAPI.Services.Customer
             _db = db;
         }
 
-        public async Task<IEnumerable<CustomerListDTO>> GetAllAsync(string? search = null)
+        public async Task<CustomerPagedDTO> GetPagedAsync(string? search, int page, int pageSize)
         {
             var query = _db.Customers.AsQueryable();
 
@@ -27,8 +27,15 @@ namespace TamircimAPI.Services.Customer
                     (c.Email != null && c.Email.Contains(term)));
             }
 
-            return await query
+            var total = await query.CountAsync();
+
+            var items = await query
+                // İkincil anahtar (Id): CreatedAt eşit olan kayıtlarda kararlı toplam
+                // sıralama sağlar → sayfalar arası kayma/tekrar olmaz.
                 .OrderByDescending(c => c.CreatedAt)
+                .ThenByDescending(c => c.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .Select(c => new CustomerListDTO
                 {
                     Id = c.Id,
@@ -45,6 +52,13 @@ namespace TamircimAPI.Services.Customer
                         .FirstOrDefault()
                 })
                 .ToListAsync();
+
+            return new CustomerPagedDTO
+            {
+                Items = items,
+                Total = total,
+                HasMore = page * pageSize < total,
+            };
         }
 
         public async Task<CustomerDTO?> GetByIdAsync(int id)

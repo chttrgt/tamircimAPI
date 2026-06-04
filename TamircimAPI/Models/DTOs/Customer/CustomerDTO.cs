@@ -51,4 +51,12 @@ namespace TamircimAPI.Models.DTOs.Customer
         public int DeviceCount { get; set; }
         public string? PrimaryDeviceType { get; set; }
     }
+
+    // Sayfalı müşteri listesi (offset pagination). DevicePhotoPagedDTO ile aynı şekil.
+    public class CustomerPagedDTO
+    {
+        public List<CustomerListDTO> Items { get; set; } = new();
+        public int Total { get; set; }
+        public bool HasMore { get; set; }
+    }
 }

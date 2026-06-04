@@ -4,7 +4,7 @@ namespace TamircimAPI.Services.Customer
 {
     public interface ICustomerQueryService
     {
-        Task<IEnumerable<CustomerListDTO>> GetAllAsync(string? search = null);
+        Task<CustomerPagedDTO> GetPagedAsync(string? search, int page, int pageSize);
         Task<CustomerDTO?> GetByIdAsync(int id);
     }
 }

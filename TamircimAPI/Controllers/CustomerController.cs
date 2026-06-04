@@ -20,9 +20,14 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] string? search = null)
+        public async Task<IActionResult> GetAll(
+            [FromQuery] string? search = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 30)
         {
-            var result = await _query.GetAllAsync(search);
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 30;
+            var result = await _query.GetPagedAsync(search, page, pageSize);
             return Ok(result);
         }
 
