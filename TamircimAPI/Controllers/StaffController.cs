@@ -20,8 +20,14 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(await _staff.GetAllAsync());
+        public async Task<IActionResult> GetAll(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+            return Ok(await _staff.GetPagedAsync(page, pageSize));
+        }
 
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateStaffDTO dto)

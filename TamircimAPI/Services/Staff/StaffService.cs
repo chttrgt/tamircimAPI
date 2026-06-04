@@ -17,15 +17,26 @@ namespace TamircimAPI.Services.Staff
             _db = db;
         }
 
-        public async Task<List<StaffListDTO>> GetAllAsync()
+        public async Task<StaffPagedDTO> GetPagedAsync(int page, int pageSize)
         {
-            var users = await _db.Users
+            var query = _db.Users
                 .Include(u => u.Permissions)
                 .OrderBy(u => u.Role)        // Sahip (0) önce
                 .ThenBy(u => u.FirstName)
+                .ThenBy(u => u.Id);
+
+            var total = await query.CountAsync();
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return users.Select(MapToDto).ToList();
+            return new StaffPagedDTO
+            {
+                Items = items.Select(MapToDto).ToList(),
+                Total = total,
+                HasMore = page * pageSize < total,
+            };
         }
 
         public async Task<StaffListDTO> CreateAsync(CreateStaffDTO dto)

@@ -1,5 +1,13 @@
 namespace TamircimAPI.Models.DTOs.Staff
 {
+    public class StaffPagedDTO
+    {
+        public List<StaffListDTO> Items { get; set; } = new();
+        public int Total { get; set; }
+        public bool HasMore { get; set; }
+    }
+
+
     public class StaffListDTO
     {
         public int Id { get; set; }
