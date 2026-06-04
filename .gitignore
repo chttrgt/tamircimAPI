@@ -24,3 +24,7 @@ logs/
 
 # Docker volumes (local geliştirme)
 postgres_data/
+
+# Yüklenen cihaz fotoğrafları (kullanıcı verisi)
+uploads/
+TamircimAPI/uploads/

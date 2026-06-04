@@ -186,6 +186,10 @@ namespace TamircimAPI.Data
         public DbSet<RepairRecord> RepairRecords { get; set; }
         #endregion
 
+        #region CİHAZ FOTOĞRAFI
+        public DbSet<DevicePhoto> DevicePhotos { get; set; }
+        #endregion
+
         #region DENETİM LOGU
         public DbSet<AuditLog> AuditLogs { get; set; }
         #endregion
@@ -357,6 +361,41 @@ namespace TamircimAPI.Data
 
                 entity.HasQueryFilter(e => !e.IsDeleted);
                 entity.HasIndex(e => e.IsDeleted).HasFilter("\"IsDeleted\" = false");
+            });
+            #endregion
+
+            #region DevicePhoto
+            modelBuilder.Entity<DevicePhoto>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.FileName).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.ThumbnailFileName).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.ContentType).IsRequired().HasMaxLength(100);
+
+                entity.HasOne(e => e.Device)
+                    .WithMany()
+                    .HasForeignKey(e => e.DeviceId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.CreatedByUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.CreatedByUserId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(e => e.UpdatedByUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.UpdatedByUserId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(e => e.DeletedByUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.DeletedByUserId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => e.DeviceId);
+                // GC görevi soft-deleted + retention dolmuş kayıtları DeletedAt ile tarar
+                entity.HasIndex(e => e.DeletedAt);
+                entity.HasQueryFilter(e => !e.IsDeleted);
             });
             #endregion
 

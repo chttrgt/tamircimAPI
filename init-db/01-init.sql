@@ -170,6 +170,36 @@ CREATE INDEX "IX_RepairRecords_CreatedAt" ON "RepairRecords" ("CreatedAt");
 CREATE INDEX "IX_RepairRecords_IsDeleted" ON "RepairRecords" ("IsDeleted") WHERE "IsDeleted" = false;
 
 -- =============================================
+-- CİHAZ FOTOĞRAFLARI
+-- Görsel byte'ları sunucu diskinde (uploads/), burada sadece metadata.
+-- Hibrit silme: IsDeleted=true → retention sonrası GC görevi diskten + DB'den siler.
+-- =============================================
+CREATE TABLE "DevicePhotos" (
+    "Id"                int4 GENERATED ALWAYS AS IDENTITY(START 1 INCREMENT 1) NOT NULL,
+    "DeviceId"          int4 NOT NULL,
+    "FileName"          varchar(100) NOT NULL,
+    "ThumbnailFileName" varchar(100) NOT NULL,
+    "ContentType"       varchar(100) NOT NULL DEFAULT 'image/jpeg',
+    "SizeBytes"         int8 NOT NULL DEFAULT 0,
+    "Width"             int4 NOT NULL DEFAULT 0,
+    "Height"            int4 NOT NULL DEFAULT 0,
+    "CreatedAt"         timestamp DEFAULT timezone('utc', now()) NOT NULL,
+    "UpdatedAt"         timestamp DEFAULT timezone('utc', now()) NOT NULL,
+    "CreatedByUserId"   int4 NULL,
+    "UpdatedByUserId"   int4 NULL,
+    "IsDeleted"         bool DEFAULT false NOT NULL,
+    "DeletedAt"         timestamp NULL,
+    "DeletedByUserId"   int4 NULL,
+    CONSTRAINT "PK_DevicePhotos" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_DevicePhotos_Devices" FOREIGN KEY ("DeviceId") REFERENCES "Devices"("Id") ON DELETE CASCADE,
+    CONSTRAINT "FK_DevicePhotos_CreatedBy" FOREIGN KEY ("CreatedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL,
+    CONSTRAINT "FK_DevicePhotos_UpdatedBy" FOREIGN KEY ("UpdatedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL,
+    CONSTRAINT "FK_DevicePhotos_DeletedBy" FOREIGN KEY ("DeletedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL
+);
+CREATE INDEX "IX_DevicePhotos_DeviceId" ON "DevicePhotos" ("DeviceId");
+CREATE INDEX "IX_DevicePhotos_DeletedAt" ON "DevicePhotos" ("DeletedAt");
+
+-- =============================================
 -- DENETİM LOGU
 -- =============================================
 CREATE TABLE "AuditLogs" (

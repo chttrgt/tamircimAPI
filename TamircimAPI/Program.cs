@@ -138,6 +138,11 @@ builder.Services.AddScoped<IDeviceCommandService, DeviceCommandService>();
 builder.Services.AddScoped<IRepairQueryService, RepairQueryService>();
 builder.Services.AddScoped<IRepairCommandService, RepairCommandService>();
 
+// Cihaz fotoğrafları (depolama + servis + 30 gün GC görevi)
+builder.Services.AddSingleton<TamircimAPI.Services.Storage.IPhotoStorage, TamircimAPI.Services.Storage.LocalPhotoStorage>();
+builder.Services.AddScoped<IDevicePhotoService, DevicePhotoService>();
+builder.Services.AddHostedService<TamircimAPI.Services.Storage.PhotoCleanupService>();
+
 // Authorization
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
