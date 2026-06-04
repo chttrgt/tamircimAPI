@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Data;
+using TamircimAPI.Exceptions;
 using TamircimAPI.Models;
 using TamircimAPI.Models.DTOs.Auth;
 using TamircimAPI.Services.Token;
@@ -19,8 +20,18 @@ namespace TamircimAPI.Services.Auth
             _configuration = configuration;
         }
 
+        public Task<bool> IsInitializedAsync() => _db.Users.AnyAsync();
+
         public async Task<LoginResponseDTO> RegisterAsync(RegisterDTO dto, string ipAddress)
         {
+            // İlk-kurulum modeli: kayıt yalnızca sistemde hiç kullanıcı yokken (ilk sahip)
+            // açıktır. Kurulduktan sonra açık kayıt kapalıdır — çalışan ekleme ayrı bir
+            // yetkili akışla yapılmalıdır (henüz mevcut değil).
+            if (await _db.Users.AnyAsync())
+                throw new BusinessRuleException(
+                    "Kayıt kapalı. Sistem zaten kurulmuş.",
+                    "REGISTRATION_CLOSED");
+
             var exists = await _db.Users.AnyAsync(u => u.Email == dto.Email);
             if (exists)
                 throw new ArgumentException("Bu e-posta adresi zaten kayıtlı.");

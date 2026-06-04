@@ -245,25 +245,15 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-// Turkish lower fonksiyonunu oluştur
+// Veritabanı şemasını migration'larla güncel tutar: boş DB → tüm şema (tablolar,
+// turkish_lower fonksiyonu, sequence'ler) sıfırdan kurulur; dolu DB → yalnızca
+// bekleyen migration'lar uygulanır. Her container başlangıcında çalışır →
+// sunucu güncellemelerinde elle SQL/ALTER gerekmez.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    db.Database.ExecuteSqlRaw("""
-        CREATE OR REPLACE FUNCTION turkish_lower(input text) RETURNS text AS $$
-        SELECT LOWER(
-          REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-            input,
-            chr(304), 'i'),
-            chr(305), 'i'),
-            chr(350), chr(351)),
-            chr(286), chr(287)),
-            chr(220), chr(252)),
-            chr(214), chr(246)),
-            chr(199), chr(231))
-        )
-        $$ LANGUAGE SQL IMMUTABLE STRICT;
-        """);
+    db.Database.Migrate();
+    Log.Information("Veritabanı migration'ları uygulandı.");
 }
 
 app.UseExceptionHandling();

@@ -18,6 +18,16 @@ namespace TamircimAPI.Controllers
             _authService = authService;
         }
 
+        // İlk-kurulum kontrolü: istemci açılışta sahip kurulumu mu yoksa giriş mi
+        // göstereceğine buna göre karar verir. Public (auth gerektirmez).
+        [HttpGet("setup-status")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> SetupStatus()
+        {
+            var initialized = await _authService.IsInitializedAsync();
+            return Ok(new { initialized });
+        }
+
         [HttpPost("register")]
         [EnableRateLimiting("auth")]
         public async Task<IActionResult> Register([FromBody] RegisterDTO dto)
