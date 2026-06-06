@@ -1,7 +1,12 @@
 using System.Security.Claims;
+using TamircimAPI.Services.Tenant;
 
 namespace TamircimAPI.Middleware
 {
+    // Kimlik doğrulanmış isteklerde JWT claim'lerinden istek bağlamını zenginleştirir:
+    // UserId/UserEmail (loglama) + tenant_id (tenant izolasyonu). tenant_id ITenantContext'e
+    // yazılır; EF global query filter'ları ve RLS oturum değişkeni bundan beslenir.
+    // UseAuthentication SONRASI çalışmalıdır.
     public class UserEnrichmentMiddleware
     {
         private readonly RequestDelegate _next;
@@ -11,7 +16,8 @@ namespace TamircimAPI.Middleware
             _next = next;
         }
 
-        public async Task InvokeAsync(HttpContext context)
+        // ITenantContext scoped → InvokeAsync parametresi olarak çözülür.
+        public async Task InvokeAsync(HttpContext context, ITenantContext tenantContext)
         {
             if (context.User.Identity?.IsAuthenticated == true)
             {
@@ -23,6 +29,12 @@ namespace TamircimAPI.Middleware
 
                 if (!string.IsNullOrEmpty(userEmail))
                     context.Items["UserEmail"] = userEmail;
+
+                // Tenant'ı yalnızca imzalı token'dan al. Geçersiz/eksikse set etme →
+                // ITenantContext.TenantId null kalır → iş-verisi sorguları satır döndürmez.
+                var tenantClaim = context.User.FindFirstValue("tenant_id");
+                if (int.TryParse(tenantClaim, out var tenantId) && tenantId > 0)
+                    tenantContext.SetTenant(tenantId);
             }
 
             await _next(context);

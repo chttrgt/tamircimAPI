@@ -2,9 +2,10 @@ using TamircimAPI.Models.Interfaces;
 
 namespace TamircimAPI.Models
 {
-    public class Customer : IAuditable, ISoftDeletable
+    public class Customer : IAuditable, ISoftDeletable, ITenantOwned
     {
         public int Id { get; set; }
+        public int TenantId { get; set; }
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public string? NationalId { get; set; }

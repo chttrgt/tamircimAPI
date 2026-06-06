@@ -8,8 +8,11 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-TamircimDB}
       - POSTGRES_INITDB_ARGS=--encoding=UTF8 --lc-collate=C --lc-ctype=C
       - LANG=C.UTF-8
+      - APP_DB_PASSWORD=${APP_DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # İlk kurulumda tamircim_app (NOSUPERUSER) rolünü oluşturur → RLS için zorunlu.
+      - ./db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -29,6 +32,16 @@ services:
         condition: service_healthy
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+      # KRİTİK: superuser olmayan tamircim_app rolüyle bağlan → RLS etkin.
+      - DB_CONNECTION_STRING=Host=${POSTGRES_HOST:-postgres};Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-TamircimDB};Username=tamircim_app;Password=${APP_DB_PASSWORD}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Tamircim}
+      - TURNSTILE_SECRET=${TURNSTILE_SECRET}
     env_file:
       - .env
     volumes:

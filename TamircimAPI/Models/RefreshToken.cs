@@ -3,6 +3,10 @@ namespace TamircimAPI.Models
     public class RefreshToken
     {
         public int Id { get; set; }
+        // Refresh public bir akış (tenant context yok) — bu kolona EF filtresi/RLS
+        // UYGULANMAZ. Yalnızca kayıt/teşhis amaçlı tutulur; izolasyon token sırrıyla
+        // (64-byte rastgele) sağlanır.
+        public int TenantId { get; set; }
         public int UserId { get; set; }
         public string Token { get; set; } = string.Empty;
         public DateTime ExpiresAt { get; set; }

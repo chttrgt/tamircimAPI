@@ -5,9 +5,10 @@ namespace TamircimAPI.Models
 {
     // Fiziksel cihaz (asset). Ömür boyu tek satır; her getirilişte yeni satır AÇILMAZ.
     // Bir cihazın birden fazla servis kaydı (RepairRecord) olabilir.
-    public class Device : IAuditable, ISoftDeletable
+    public class Device : IAuditable, ISoftDeletable, ITenantOwned
     {
         public int Id { get; set; }
+        public int TenantId { get; set; }
         public int CustomerId { get; set; }
 
         // Dahili benzersiz kimlik (asset tag), örn. "CHZ-000123". Seri no olsun olmasın her cihazda bulunur.

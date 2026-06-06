@@ -12,26 +12,23 @@ namespace TamircimAPI.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // EF modelinin üretmediği özel nesneler (eski init-db'den taşındı):
-            // 1) Türkçe karakter normalizasyonu — LINQ sorgularında HasDbFunction ile kullanılıyor.
-            migrationBuilder.Sql(@"
-CREATE OR REPLACE FUNCTION turkish_lower(input text) RETURNS text AS $$
-SELECT LOWER(
-  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-    input,
-    chr(304), 'i'),
-    chr(305), 'i'),
-    chr(350), chr(351)),
-    chr(286), chr(287)),
-    chr(220), chr(252)),
-    chr(214), chr(246)),
-    chr(199), chr(231))
-)
-$$ LANGUAGE SQL IMMUTABLE STRICT;");
-
-            // 2) Cihaz kodu (CHZ-xxxxxx) ve fiş no üreten sequence'ler — CodeGenerator nextval() ile kullanıyor.
-            migrationBuilder.Sql("CREATE SEQUENCE IF NOT EXISTS device_code_seq START 1;");
-            migrationBuilder.Sql("CREATE SEQUENCE IF NOT EXISTS ticket_no_seq START 1;");
+            migrationBuilder.CreateTable(
+                name: "Tenants",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Branch = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
+                    NextDeviceSeq = table.Column<long>(type: "bigint", nullable: false, defaultValue: 1L),
+                    NextTicketSeq = table.Column<long>(type: "bigint", nullable: false, defaultValue: 1L)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Tenants", x => x.Id);
+                });
 
             migrationBuilder.CreateTable(
                 name: "Users",
@@ -39,20 +36,28 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    TenantId = table.Column<int>(type: "integer", nullable: false),
                     FirstName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     LastName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     Email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                     Title = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
-                    Branch = table.Column<string>(type: "text", nullable: false),
                     PasswordHash = table.Column<string>(type: "text", nullable: false),
                     PasswordSalt = table.Column<string>(type: "text", nullable: false),
                     IsActive = table.Column<bool>(type: "boolean", nullable: false),
+                    Role = table.Column<int>(type: "integer", nullable: false),
+                    MustChangePassword = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp without time zone", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Users", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Users_Tenants_TenantId",
+                        column: x => x.TenantId,
+                        principalTable: "Tenants",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -61,6 +66,7 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    TenantId = table.Column<int>(type: "integer", nullable: false),
                     EntityType = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     EntityId = table.Column<int>(type: "integer", nullable: false),
                     Action = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
@@ -94,6 +100,7 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    TenantId = table.Column<int>(type: "integer", nullable: false),
                     FirstName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     LastName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     NationalId = table.Column<string>(type: "character varying(11)", maxLength: 11, nullable: true),
@@ -135,11 +142,35 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 });
 
             migrationBuilder.CreateTable(
+                name: "EmailVerificationTokens",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UserId = table.Column<int>(type: "integer", nullable: false),
+                    Token = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
+                    ConsumedAt = table.Column<DateTime>(type: "timestamp without time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_EmailVerificationTokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_EmailVerificationTokens_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "RefreshTokens",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    TenantId = table.Column<int>(type: "integer", nullable: false),
                     UserId = table.Column<int>(type: "integer", nullable: false),
                     Token = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                     ExpiresAt = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
@@ -162,11 +193,32 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 });
 
             migrationBuilder.CreateTable(
+                name: "UserPermissions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UserId = table.Column<int>(type: "integer", nullable: false),
+                    Permission = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserPermissions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_UserPermissions_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Devices",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    TenantId = table.Column<int>(type: "integer", nullable: false),
                     CustomerId = table.Column<int>(type: "integer", nullable: false),
                     DeviceCode = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     DeviceType = table.Column<int>(type: "integer", nullable: false),
@@ -220,6 +272,7 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    TenantId = table.Column<int>(type: "integer", nullable: false),
                     DeviceId = table.Column<int>(type: "integer", nullable: false),
                     FileName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     ThumbnailFileName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
@@ -271,6 +324,7 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    TenantId = table.Column<int>(type: "integer", nullable: false),
                     DeviceId = table.Column<int>(type: "integer", nullable: false),
                     TicketNo = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     FaultDescription = table.Column<string>(type: "text", nullable: false),
@@ -323,35 +377,24 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_AuditLogs_Action",
-                table: "AuditLogs",
-                column: "Action");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_DeletedByUserId",
                 table: "AuditLogs",
                 column: "DeletedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_AuditLogs_EntityType",
+                name: "IX_AuditLogs_TenantId_Action",
                 table: "AuditLogs",
-                column: "EntityType");
+                columns: new[] { "TenantId", "Action" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_AuditLogs_EntityType_EntityId",
+                name: "IX_AuditLogs_TenantId_EntityType_EntityId",
                 table: "AuditLogs",
-                columns: new[] { "EntityType", "EntityId" });
+                columns: new[] { "TenantId", "EntityType", "EntityId" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_AuditLogs_IsDeleted",
+                name: "IX_AuditLogs_TenantId_Timestamp",
                 table: "AuditLogs",
-                column: "IsDeleted",
-                filter: "\"IsDeleted\" = false");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AuditLogs_Timestamp",
-                table: "AuditLogs",
-                column: "Timestamp");
+                columns: new[] { "TenantId", "Timestamp" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_UserId",
@@ -369,36 +412,35 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 column: "DeletedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Customers_Email",
+                name: "IX_Customers_TenantId_CreatedAt_Id",
                 table: "Customers",
-                column: "Email",
+                columns: new[] { "TenantId", "CreatedAt", "Id" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Customers_TenantId_Email",
+                table: "Customers",
+                columns: new[] { "TenantId", "Email" },
                 unique: true,
                 filter: "\"Email\" IS NOT NULL AND \"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Customers_IsDeleted",
+                name: "IX_Customers_TenantId_NationalId",
                 table: "Customers",
-                column: "IsDeleted",
-                filter: "\"IsDeleted\" = false");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Customers_NationalId",
-                table: "Customers",
-                column: "NationalId",
+                columns: new[] { "TenantId", "NationalId" },
                 unique: true,
                 filter: "\"NationalId\" IS NOT NULL AND \"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Customers_Phone1",
+                name: "IX_Customers_TenantId_Phone1",
                 table: "Customers",
-                column: "Phone1",
+                columns: new[] { "TenantId", "Phone1" },
                 unique: true,
                 filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Customers_Phone2",
+                name: "IX_Customers_TenantId_Phone2",
                 table: "Customers",
-                column: "Phone2",
+                columns: new[] { "TenantId", "Phone2" },
                 unique: true,
                 filter: "\"Phone2\" IS NOT NULL AND \"IsDeleted\" = false");
 
@@ -413,11 +455,6 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 column: "CreatedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_DevicePhotos_DeletedAt",
-                table: "DevicePhotos",
-                column: "DeletedAt");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_DevicePhotos_DeletedByUserId",
                 table: "DevicePhotos",
                 column: "DeletedByUserId");
@@ -426,6 +463,16 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 name: "IX_DevicePhotos_DeviceId",
                 table: "DevicePhotos",
                 column: "DeviceId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DevicePhotos_TenantId_DeletedAt",
+                table: "DevicePhotos",
+                columns: new[] { "TenantId", "DeletedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DevicePhotos_TenantId_DeviceId",
+                table: "DevicePhotos",
+                columns: new[] { "TenantId", "DeviceId" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_DevicePhotos_UpdatedByUserId",
@@ -448,32 +495,42 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 column: "DeletedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Devices_DeviceCode",
+                name: "IX_Devices_TenantId_CustomerId",
                 table: "Devices",
-                column: "DeviceCode",
+                columns: new[] { "TenantId", "CustomerId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Devices_TenantId_DeviceCode",
+                table: "Devices",
+                columns: new[] { "TenantId", "DeviceCode" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Devices_DeviceType",
+                name: "IX_Devices_TenantId_DeviceType",
                 table: "Devices",
-                column: "DeviceType");
+                columns: new[] { "TenantId", "DeviceType" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_Devices_IsDeleted",
+                name: "IX_Devices_TenantId_SerialNumber",
                 table: "Devices",
-                column: "IsDeleted",
-                filter: "\"IsDeleted\" = false");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Devices_SerialNumber",
-                table: "Devices",
-                column: "SerialNumber",
+                columns: new[] { "TenantId", "SerialNumber" },
                 filter: "\"SerialNumber\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Devices_UpdatedByUserId",
                 table: "Devices",
                 column: "UpdatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_EmailVerificationTokens_Token",
+                table: "EmailVerificationTokens",
+                column: "Token",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_EmailVerificationTokens_UserId",
+                table: "EmailVerificationTokens",
+                column: "UserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_RefreshTokens_ExpiresAt",
@@ -492,11 +549,6 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_RepairRecords_CreatedAt",
-                table: "RepairRecords",
-                column: "CreatedAt");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_RepairRecords_CreatedByUserId",
                 table: "RepairRecords",
                 column: "CreatedByUserId");
@@ -512,25 +564,29 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 column: "DeviceId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_RepairRecords_IsDeleted",
+                name: "IX_RepairRecords_TenantId_CreatedAt",
                 table: "RepairRecords",
-                column: "IsDeleted",
-                filter: "\"IsDeleted\" = false");
+                columns: new[] { "TenantId", "CreatedAt" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_RepairRecords_ReceivedAt",
+                name: "IX_RepairRecords_TenantId_DeviceId",
                 table: "RepairRecords",
-                column: "ReceivedAt");
+                columns: new[] { "TenantId", "DeviceId" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_RepairRecords_Status",
+                name: "IX_RepairRecords_TenantId_ReceivedAt",
                 table: "RepairRecords",
-                column: "Status");
+                columns: new[] { "TenantId", "ReceivedAt" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_RepairRecords_TicketNo",
+                name: "IX_RepairRecords_TenantId_Status",
                 table: "RepairRecords",
-                column: "TicketNo",
+                columns: new[] { "TenantId", "Status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RepairRecords_TenantId_TicketNo",
+                table: "RepairRecords",
+                columns: new[] { "TenantId", "TicketNo" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -539,15 +595,71 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 column: "UpdatedByUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Tenants_IsActive",
+                table: "Tenants",
+                column: "IsActive");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserPermissions_UserId_Permission",
+                table: "UserPermissions",
+                columns: new[] { "UserId", "Permission" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Users_Email",
                 table: "Users",
                 column: "Email",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_TenantId",
+                table: "Users",
+                column: "TenantId");
+
+            // --- Türkçe duyarlı küçük harf fonksiyonu (case-insensitive arama) ---
+            // CustomerQueryService bu DB fonksiyonunu (ApplicationDbContext.TurkishLower
+            // → "turkish_lower") kullanır. EF yalnızca adı eşler; gövdeyi burada kurarız.
+            migrationBuilder.Sql(@"
+                CREATE OR REPLACE FUNCTION turkish_lower(input text)
+                RETURNS text AS $$
+                  SELECT lower(translate(input, 'IİĞÜŞÖÇ', 'ıiğüşöç'));
+                $$ LANGUAGE sql IMMUTABLE;
+            ");
+
+            // --- Row-Level Security (RLS): tenant izolasyonunun 2. katmanı ---
+            // Her iş-verisi tablosunda etkin + FORCE (tablo sahibi rol bile tabidir).
+            // Politika app.tenant_id oturum değişkenini (interceptor ayarlar) okur:
+            //   = -1  → güvenilir arka plan bypass'ı (tüm satırlar)
+            //   > 0   → yalnızca o tenant'ın satırları
+            //   0/NULL→ hiçbir satır (kimlik öncesi/güvenli varsayılan)
+            // WITH CHECK yanlış tenant'a INSERT/UPDATE'i de engeller.
+            foreach (var table in new[] { "Customers", "Devices", "RepairRecords", "DevicePhotos", "AuditLogs" })
+            {
+                // NULLIF(...,''): app.tenant_id boş/ayarsızsa NULL → karşılaştırmalar
+                // NULL döner → hiçbir satır (fail-closed), ::int cast hatası olmaz.
+                migrationBuilder.Sql($@"
+                    ALTER TABLE ""{table}"" ENABLE ROW LEVEL SECURITY;
+                    ALTER TABLE ""{table}"" FORCE ROW LEVEL SECURITY;
+                    CREATE POLICY tenant_isolation ON ""{table}""
+                      USING (
+                        NULLIF(current_setting('app.tenant_id', true), '')::int = -1
+                        OR ""TenantId"" = NULLIF(current_setting('app.tenant_id', true), '')::int
+                      )
+                      WITH CHECK (
+                        NULLIF(current_setting('app.tenant_id', true), '')::int = -1
+                        OR ""TenantId"" = NULLIF(current_setting('app.tenant_id', true), '')::int
+                      );
+                ");
+            }
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // RLS politikaları tablolarla birlikte (DropTable) otomatik düşer; fonksiyonu
+            // açıkça kaldır.
+            migrationBuilder.Sql("DROP FUNCTION IF EXISTS turkish_lower(text);");
+
             migrationBuilder.DropTable(
                 name: "AuditLogs");
 
@@ -555,10 +667,16 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
                 name: "DevicePhotos");
 
             migrationBuilder.DropTable(
+                name: "EmailVerificationTokens");
+
+            migrationBuilder.DropTable(
                 name: "RefreshTokens");
 
             migrationBuilder.DropTable(
                 name: "RepairRecords");
+
+            migrationBuilder.DropTable(
+                name: "UserPermissions");
 
             migrationBuilder.DropTable(
                 name: "Devices");
@@ -569,9 +687,8 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;");
             migrationBuilder.DropTable(
                 name: "Users");
 
-            migrationBuilder.Sql("DROP SEQUENCE IF EXISTS ticket_no_seq;");
-            migrationBuilder.Sql("DROP SEQUENCE IF EXISTS device_code_seq;");
-            migrationBuilder.Sql("DROP FUNCTION IF EXISTS turkish_lower(text);");
+            migrationBuilder.DropTable(
+                name: "Tenants");
         }
     }
 }

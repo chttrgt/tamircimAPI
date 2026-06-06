@@ -2,12 +2,19 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Models;
 using TamircimAPI.Models.Interfaces;
+using TamircimAPI.Services.Tenant;
 
 namespace TamircimAPI.Data
 {
     public class ApplicationDbContext : DbContext
     {
         private readonly IHttpContextAccessor? _httpContextAccessor;
+        private readonly ITenantContext? _tenantContext;
+
+        // Query filter'larda referans verilen alan — EF, filtre lambda'sını bu instance
+        // üzerinden her sorguda yeniden değerlendirir, böylece istek başına tenant uygulanır.
+        // Tenant context yoksa (tasarım zamanı/migration) null → filtre satır döndürmez.
+        private int CurrentTenantId => _tenantContext?.TenantId ?? 0;
 
         public static string TurkishLower(string input) =>
             throw new NotSupportedException("Bu metod sadece EF Core LINQ sorgularında kullanılır.");
@@ -23,10 +30,14 @@ namespace TamircimAPI.Data
                 .ValueGeneratedOnAddOrUpdate()
                 .IsRowVersion();
 
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IHttpContextAccessor? httpContextAccessor = null)
+        public ApplicationDbContext(
+            DbContextOptions<ApplicationDbContext> options,
+            IHttpContextAccessor? httpContextAccessor = null,
+            ITenantContext? tenantContext = null)
             : base(options)
         {
             _httpContextAccessor = httpContextAccessor;
+            _tenantContext = tenantContext;
         }
 
         private int? GetCurrentUserId()
@@ -37,6 +48,7 @@ namespace TamircimAPI.Data
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
+            SetTenantIdFields();
             SetAuditableFields();
             var pendingAuditEntries = CollectAuditEntries();
             var result = base.SaveChanges(acceptAllChangesOnSuccess);
@@ -50,6 +62,7 @@ namespace TamircimAPI.Data
 
         public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
+            SetTenantIdFields();
             SetAuditableFields();
             var pendingAuditEntries = CollectAuditEntries();
             var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -65,6 +78,45 @@ namespace TamircimAPI.Data
         {
             nameof(AuditLog), nameof(RefreshToken)
         };
+
+        // Tenant izolasyonunun yazma tarafı. İstemci TenantId'yi ASLA belirleyemez:
+        // - Kimlikli istekte (context tenant var): yeni satıra context tenant atanır;
+        //   kod farklı bir tenant set etmişse → exception (cross-tenant yazma engeli).
+        // - Kayıt akışında (context tenant yok): TenantId açıkça set edilmiş olmalıdır
+        //   (RegisterAsync yeni tenant'ın id'sini verir); aksi halde → exception.
+        // - Mevcut satırın TenantId'sini değiştirmeye çalışmak → exception.
+        private void SetTenantIdFields()
+        {
+            var ctxTenant = _tenantContext?.TenantId;
+
+            foreach (var entry in ChangeTracker.Entries<ITenantOwned>())
+            {
+                if (entry.State == EntityState.Added)
+                {
+                    if (ctxTenant.HasValue)
+                    {
+                        if (entry.Entity.TenantId == 0)
+                            entry.Entity.TenantId = ctxTenant.Value;
+                        else if (entry.Entity.TenantId != ctxTenant.Value)
+                            throw new InvalidOperationException(
+                                "Tenant ihlali: kayıt başka bir tenant'a yazılamaz.");
+                    }
+                    else if (entry.Entity.TenantId == 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Tenant belirlenemedi: TenantId set edilmemiş ve istek tenant bağlamı yok.");
+                    }
+                }
+                else if (entry.State == EntityState.Modified)
+                {
+                    var tenantProp = entry.Property(nameof(ITenantOwned.TenantId));
+                    if (tenantProp.IsModified &&
+                        !Equals(tenantProp.OriginalValue, tenantProp.CurrentValue))
+                        throw new InvalidOperationException(
+                            "Tenant ihlali: var olan kaydın tenant'ı değiştirilemez.");
+                }
+            }
+        }
 
         private void SetAuditableFields()
         {
@@ -170,6 +222,11 @@ namespace TamircimAPI.Data
 
                 AuditLogs.Add(new AuditLog
                 {
+                    // Audit yalnızca kimlikli isteklerde toplanır (userId != null) →
+                    // context tenant her zaman mevcuttur. RLS WITH CHECK için bu satır
+                    // doğru tenant'a yazılmalıdır (2. SaveChanges'te SetTenantIdFields
+                    // çalışmadığından burada açıkça set ediyoruz).
+                    TenantId = _tenantContext?.TenantId ?? 0,
                     EntityType = entityType,
                     EntityId = entityId,
                     Action = action,
@@ -180,10 +237,15 @@ namespace TamircimAPI.Data
             }
         }
 
+        #region TENANT
+        public DbSet<Tenant> Tenants { get; set; }
+        #endregion
+
         #region KULLANICI
         public DbSet<User> Users { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<UserPermission> UserPermissions { get; set; }
+        public DbSet<EmailVerificationToken> EmailVerificationTokens { get; set; }
         #endregion
 
         #region MÜŞTERİ
@@ -214,11 +276,26 @@ namespace TamircimAPI.Data
                 .GetMethod(nameof(TurkishLower), new[] { typeof(string) })!)
                 .HasName("turkish_lower");
 
+            #region Tenant
+            modelBuilder.Entity<Tenant>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.Branch).HasMaxLength(100);
+                entity.Property(e => e.NextDeviceSeq).HasDefaultValue(1L);
+                entity.Property(e => e.NextTicketSeq).HasDefaultValue(1L);
+                entity.HasIndex(e => e.IsActive);
+            });
+            #endregion
+
             #region User
             modelBuilder.Entity<User>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                // E-posta GLOBAL benzersiz kalır: login e-posta → kullanıcı → tenant
+                // ile çalışır, tenant seçicisi gerekmez. Bir e-posta tek tenant'a aittir.
                 entity.HasIndex(e => e.Email).IsUnique();
+                entity.HasIndex(e => e.TenantId);
                 entity.Property(e => e.FirstName).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.LastName).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.Email).IsRequired().HasMaxLength(256);
@@ -227,6 +304,33 @@ namespace TamircimAPI.Data
                 entity.Property(e => e.PasswordSalt).IsRequired();
                 entity.Property(e => e.Role).HasConversion<int>();
                 entity.Ignore(e => e.FullName);
+
+                entity.HasOne(e => e.Tenant)
+                    .WithMany(t => t.Users)
+                    .HasForeignKey(e => e.TenantId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Tenant izolasyonu (1. katman). StaffService vb. otomatik tenant-scope'lu;
+                // login/refresh global arama için IgnoreQueryFilters() kullanır.
+                entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+            });
+            #endregion
+
+            #region EmailVerificationToken
+            modelBuilder.Entity<EmailVerificationToken>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.Token).IsUnique();
+                entity.Property(e => e.Token).IsRequired().HasMaxLength(128);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Ignore(e => e.IsConsumed);
+                entity.Ignore(e => e.IsExpired);
+                entity.Ignore(e => e.IsValid);
             });
             #endregion
 
@@ -284,10 +388,12 @@ namespace TamircimAPI.Data
                 entity.Property(e => e.Address).HasColumnType("text");
                 entity.Property(e => e.Notes).HasColumnType("text");
 
-                entity.HasIndex(e => e.Phone1).IsUnique().HasFilter("\"IsDeleted\" = false");
-                entity.HasIndex(e => e.Phone2).IsUnique().HasFilter("\"Phone2\" IS NOT NULL AND \"IsDeleted\" = false");
-                entity.HasIndex(e => e.NationalId).IsUnique().HasFilter("\"NationalId\" IS NOT NULL AND \"IsDeleted\" = false");
-                entity.HasIndex(e => e.Email).IsUnique().HasFilter("\"Email\" IS NOT NULL AND \"IsDeleted\" = false");
+                // Benzersizlik tenant-scope'ludur: aynı telefon/kimlik farklı dükkânlarda
+                // çakışmaz, ama aynı dükkân içinde tekildir.
+                entity.HasIndex(e => new { e.TenantId, e.Phone1 }).IsUnique().HasFilter("\"IsDeleted\" = false");
+                entity.HasIndex(e => new { e.TenantId, e.Phone2 }).IsUnique().HasFilter("\"Phone2\" IS NOT NULL AND \"IsDeleted\" = false");
+                entity.HasIndex(e => new { e.TenantId, e.NationalId }).IsUnique().HasFilter("\"NationalId\" IS NOT NULL AND \"IsDeleted\" = false");
+                entity.HasIndex(e => new { e.TenantId, e.Email }).IsUnique().HasFilter("\"Email\" IS NOT NULL AND \"IsDeleted\" = false");
                 entity.Ignore(e => e.FullName);
 
                 entity.HasOne(e => e.CreatedByUser)
@@ -305,8 +411,10 @@ namespace TamircimAPI.Data
                     .HasForeignKey(e => e.DeletedByUserId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                entity.HasQueryFilter(e => !e.IsDeleted);
-                entity.HasIndex(e => e.IsDeleted).HasFilter("\"IsDeleted\" = false");
+                // Paging: (TenantId, CreatedAt DESC, Id DESC) composite index.
+                entity.HasIndex(e => new { e.TenantId, e.CreatedAt, e.Id });
+
+                entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
             });
             #endregion
 
@@ -322,10 +430,10 @@ namespace TamircimAPI.Data
                 entity.Property(e => e.Notes).HasColumnType("text");
                 entity.Property(e => e.DeviceType).HasConversion<int>();
 
-                entity.HasIndex(e => e.DeviceCode).IsUnique();
-                entity.HasIndex(e => e.CustomerId);
-                entity.HasIndex(e => e.DeviceType);
-                entity.HasIndex(e => e.SerialNumber).HasFilter("\"SerialNumber\" IS NOT NULL");
+                entity.HasIndex(e => new { e.TenantId, e.DeviceCode }).IsUnique();
+                entity.HasIndex(e => new { e.TenantId, e.CustomerId });
+                entity.HasIndex(e => new { e.TenantId, e.DeviceType });
+                entity.HasIndex(e => new { e.TenantId, e.SerialNumber }).HasFilter("\"SerialNumber\" IS NOT NULL");
 
                 entity.HasOne(e => e.Customer)
                     .WithMany(c => c.Devices)
@@ -347,8 +455,7 @@ namespace TamircimAPI.Data
                     .HasForeignKey(e => e.DeletedByUserId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                entity.HasQueryFilter(e => !e.IsDeleted);
-                entity.HasIndex(e => e.IsDeleted).HasFilter("\"IsDeleted\" = false");
+                entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
             });
             #endregion
 
@@ -365,11 +472,11 @@ namespace TamircimAPI.Data
                 entity.Property(e => e.WaitingReason).HasColumnType("text");
                 entity.Property(e => e.Notes).HasColumnType("text");
 
-                entity.HasIndex(e => e.TicketNo).IsUnique();
-                entity.HasIndex(e => e.DeviceId);
-                entity.HasIndex(e => e.Status);
-                entity.HasIndex(e => e.ReceivedAt);
-                entity.HasIndex(e => e.CreatedAt);
+                entity.HasIndex(e => new { e.TenantId, e.TicketNo }).IsUnique();
+                entity.HasIndex(e => new { e.TenantId, e.DeviceId });
+                entity.HasIndex(e => new { e.TenantId, e.Status });
+                entity.HasIndex(e => new { e.TenantId, e.ReceivedAt });
+                entity.HasIndex(e => new { e.TenantId, e.CreatedAt });
 
                 entity.HasOne(e => e.Device)
                     .WithMany(d => d.RepairRecords)
@@ -391,8 +498,7 @@ namespace TamircimAPI.Data
                     .HasForeignKey(e => e.DeletedByUserId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                entity.HasQueryFilter(e => !e.IsDeleted);
-                entity.HasIndex(e => e.IsDeleted).HasFilter("\"IsDeleted\" = false");
+                entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
             });
             #endregion
 
@@ -425,10 +531,10 @@ namespace TamircimAPI.Data
                     .HasForeignKey(e => e.DeletedByUserId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                entity.HasIndex(e => e.DeviceId);
+                entity.HasIndex(e => new { e.TenantId, e.DeviceId });
                 // GC görevi soft-deleted + retention dolmuş kayıtları DeletedAt ile tarar
-                entity.HasIndex(e => e.DeletedAt);
-                entity.HasQueryFilter(e => !e.IsDeleted);
+                entity.HasIndex(e => new { e.TenantId, e.DeletedAt });
+                entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
             });
             #endregion
 
@@ -450,14 +556,12 @@ namespace TamircimAPI.Data
                     .HasForeignKey(e => e.DeletedByUserId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                entity.HasIndex(e => e.EntityType);
-                entity.HasIndex(e => e.Action);
+                entity.HasIndex(e => new { e.TenantId, e.Timestamp });
+                entity.HasIndex(e => new { e.TenantId, e.EntityType, e.EntityId });
+                entity.HasIndex(e => new { e.TenantId, e.Action });
                 entity.HasIndex(e => e.UserId);
-                entity.HasIndex(e => e.Timestamp);
-                entity.HasIndex(e => new { e.EntityType, e.EntityId });
 
-                entity.HasQueryFilter(e => !e.IsDeleted);
-                entity.HasIndex(e => e.IsDeleted).HasFilter("\"IsDeleted\" = false");
+                entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
             });
             #endregion
         }

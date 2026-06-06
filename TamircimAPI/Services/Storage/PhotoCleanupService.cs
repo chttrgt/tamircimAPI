@@ -52,12 +52,19 @@ namespace TamircimAPI.Services.Storage
         private async Task RunCleanupAsync(CancellationToken ct)
         {
             using var scope = _services.CreateScope();
+            // Arka plan GC tüm tenant'lar üzerinde çalışır. RLS bunu DB seviyesinde
+            // engellemesin diye güvenilir bypass'ı etkinleştir (DbContext oluşturulmadan
+            // ÖNCE, ki interceptor app.tenant_id=-1 yazsın). İstek akışından ulaşılamaz.
+            var tenant = scope.ServiceProvider.GetRequiredService<TamircimAPI.Services.Tenant.ITenantContext>();
+            tenant.SetBypass();
+
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var storage = scope.ServiceProvider.GetRequiredService<IPhotoStorage>();
 
             var cutoff = DateTime.UtcNow.AddDays(-_retentionDays);
 
-            // Query filter soft-deleted'ı gizler → IgnoreQueryFilters
+            // Query filter hem soft-deleted'ı hem tenant'ı gizler → IgnoreQueryFilters
+            // (RLS bypass'ı yukarıda ayrıca sağlandı).
             var expired = await db.DevicePhotos
                 .IgnoreQueryFilters()
                 .Where(p => p.IsDeleted && p.DeletedAt != null && p.DeletedAt < cutoff)

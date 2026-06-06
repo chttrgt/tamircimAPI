@@ -185,9 +185,10 @@ namespace TamircimAPI.Services.Dashboard
             if (!int.TryParse(userIdStr, out var userId))
                 return "Diğer";
 
+            // Branch artık tenant düzeyinde. Kullanıcı mevcut tenant'ta (filtre uygular).
             var branch = await _db.Users
                 .Where(u => u.Id == userId)
-                .Select(u => u.Branch)
+                .Select(u => u.Tenant.Branch)
                 .FirstOrDefaultAsync();
 
             return string.IsNullOrWhiteSpace(branch) ? "Diğer" : branch;

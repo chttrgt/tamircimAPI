@@ -6,9 +6,10 @@ namespace TamircimAPI.Models
     // bu kayıt yalnızca metadata ve disk dosyalarının adlarını saklar.
     // Hibrit silme: kullanıcı silince soft-delete; arka plan görevi retention
     // süresi dolunca diskten + DB'den kalıcı temizler.
-    public class DevicePhoto : IAuditable, ISoftDeletable
+    public class DevicePhoto : IAuditable, ISoftDeletable, ITenantOwned
     {
         public int Id { get; set; }
+        public int TenantId { get; set; }
         public int DeviceId { get; set; }
 
         // Diskteki dosya adları (guid.jpg / guid_thumb.jpg). Yol deviceId'den türetilir.

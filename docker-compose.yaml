@@ -13,6 +13,19 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173;http://localhost:3000}
+      # KRİTİK: Uygulama superuser olmayan tamircim_app rolüyle bağlanır → RLS etkin.
+      # (postgres superuser ile bağlanılırsa RLS bypass edilir, tenant izolasyonu çöker.)
+      - DB_CONNECTION_STRING=Host=${POSTGRES_HOST:-postgres};Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-TamircimDB};Username=tamircim_app;Password=${APP_DB_PASSWORD}
+      # E-posta doğrulama (self-servis kayıt)
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Tamircim}
+      # Bot koruması (Cloudflare Turnstile)
+      - TURNSTILE_SECRET=${TURNSTILE_SECRET}
     env_file:
       - .env
     volumes:
@@ -34,10 +47,13 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-TamircimDB}
       - POSTGRES_INITDB_ARGS=--encoding=UTF8 --lc-collate=C --lc-ctype=C
       - LANG=C.UTF-8
+      # init script'in uygulama rolünü oluştururken kullanacağı şifre.
+      - APP_DB_PASSWORD=${APP_DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Şema artık EF Core migration'larıyla (API açılışında Database.Migrate())
-      # kurulur — Postgres boş başlar. init-db mount'u kaldırıldı.
+      # İlk kurulumda tamircim_app (NOSUPERUSER) rolünü oluşturur → RLS etkin kalsın.
+      # Yalnızca boş veri dizininde bir kez çalışır; mevcut DB için `down -v` gerekir.
+      - ./db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

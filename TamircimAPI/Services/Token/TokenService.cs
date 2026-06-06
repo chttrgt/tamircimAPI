@@ -31,6 +31,8 @@ namespace TamircimAPI.Services.Token
                 new Claim(ClaimTypes.Email, user.Email),
                 new Claim(ClaimTypes.Name, user.FullName),
                 new Claim(ClaimTypes.Role, user.Role.ToString()),
+                // Tenant izolasyonunun temeli: tenant yalnızca imzalı token'dan okunur.
+                new Claim("tenant_id", user.TenantId.ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 

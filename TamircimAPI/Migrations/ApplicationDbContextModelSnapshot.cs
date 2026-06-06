@@ -56,6 +56,9 @@ namespace TamircimAPI.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("timestamp without time zone");
 
@@ -64,20 +67,15 @@ namespace TamircimAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Action");
-
                     b.HasIndex("DeletedByUserId");
-
-                    b.HasIndex("EntityType");
-
-                    b.HasIndex("IsDeleted")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("Timestamp");
 
                     b.HasIndex("UserId");
 
-                    b.HasIndex("EntityType", "EntityId");
+                    b.HasIndex("TenantId", "Action");
+
+                    b.HasIndex("TenantId", "Timestamp");
+
+                    b.HasIndex("TenantId", "EntityType", "EntityId");
 
                     b.ToTable("AuditLogs");
                 });
@@ -138,6 +136,9 @@ namespace TamircimAPI.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp without time zone");
 
@@ -156,26 +157,25 @@ namespace TamircimAPI.Migrations
 
                     b.HasIndex("DeletedByUserId");
 
-                    b.HasIndex("Email")
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("TenantId", "Email")
                         .IsUnique()
                         .HasFilter("\"Email\" IS NOT NULL AND \"IsDeleted\" = false");
 
-                    b.HasIndex("IsDeleted")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("NationalId")
+                    b.HasIndex("TenantId", "NationalId")
                         .IsUnique()
                         .HasFilter("\"NationalId\" IS NOT NULL AND \"IsDeleted\" = false");
 
-                    b.HasIndex("Phone1")
+                    b.HasIndex("TenantId", "Phone1")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.HasIndex("Phone2")
+                    b.HasIndex("TenantId", "Phone2")
                         .IsUnique()
                         .HasFilter("\"Phone2\" IS NOT NULL AND \"IsDeleted\" = false");
 
-                    b.HasIndex("UpdatedByUserId");
+                    b.HasIndex("TenantId", "CreatedAt", "Id");
 
                     b.ToTable("Customers");
                 });
@@ -238,6 +238,9 @@ namespace TamircimAPI.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp without time zone");
 
@@ -258,18 +261,17 @@ namespace TamircimAPI.Migrations
 
                     b.HasIndex("DeletedByUserId");
 
-                    b.HasIndex("DeviceCode")
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("TenantId", "CustomerId");
+
+                    b.HasIndex("TenantId", "DeviceCode")
                         .IsUnique();
 
-                    b.HasIndex("DeviceType");
+                    b.HasIndex("TenantId", "DeviceType");
 
-                    b.HasIndex("IsDeleted")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("SerialNumber")
+                    b.HasIndex("TenantId", "SerialNumber")
                         .HasFilter("\"SerialNumber\" IS NOT NULL");
-
-                    b.HasIndex("UpdatedByUserId");
 
                     b.ToTable("Devices");
                 });
@@ -316,6 +318,9 @@ namespace TamircimAPI.Migrations
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
 
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ThumbnailFileName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -340,15 +345,52 @@ namespace TamircimAPI.Migrations
 
                     b.HasIndex("CreatedByUserId");
 
-                    b.HasIndex("DeletedAt");
-
                     b.HasIndex("DeletedByUserId");
 
                     b.HasIndex("DeviceId");
 
                     b.HasIndex("UpdatedByUserId");
 
+                    b.HasIndex("TenantId", "DeletedAt");
+
+                    b.HasIndex("TenantId", "DeviceId");
+
                     b.ToTable("DevicePhotos");
+                });
+
+            modelBuilder.Entity("TamircimAPI.Models.EmailVerificationToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ConsumedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("EmailVerificationTokens");
                 });
 
             modelBuilder.Entity("TamircimAPI.Models.RefreshToken", b =>
@@ -383,6 +425,9 @@ namespace TamircimAPI.Migrations
                     b.Property<string>("RevokedByIp")
                         .HasMaxLength(45)
                         .HasColumnType("character varying(45)");
+
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Token")
                         .IsRequired()
@@ -458,6 +503,9 @@ namespace TamircimAPI.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("TicketNo")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -483,30 +531,29 @@ namespace TamircimAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreatedAt");
-
                     b.HasIndex("CreatedByUserId");
 
                     b.HasIndex("DeletedByUserId");
 
                     b.HasIndex("DeviceId");
 
-                    b.HasIndex("IsDeleted")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("ReceivedAt");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("TicketNo")
-                        .IsUnique();
-
                     b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("TenantId", "CreatedAt");
+
+                    b.HasIndex("TenantId", "DeviceId");
+
+                    b.HasIndex("TenantId", "ReceivedAt");
+
+                    b.HasIndex("TenantId", "Status");
+
+                    b.HasIndex("TenantId", "TicketNo")
+                        .IsUnique();
 
                     b.ToTable("RepairRecords");
                 });
 
-            modelBuilder.Entity("TamircimAPI.Models.User", b =>
+            modelBuilder.Entity("TamircimAPI.Models.Tenant", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -516,7 +563,44 @@ namespace TamircimAPI.Migrations
 
                     b.Property<string>("Branch")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<long>("NextDeviceSeq")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
+                    b.Property<long>("NextTicketSeq")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.ToTable("Tenants");
+                });
+
+            modelBuilder.Entity("TamircimAPI.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp without time zone");
@@ -553,6 +637,9 @@ namespace TamircimAPI.Migrations
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
+                    b.Property<int>("TenantId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Title")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -564,6 +651,8 @@ namespace TamircimAPI.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("Users");
                 });
@@ -697,6 +786,17 @@ namespace TamircimAPI.Migrations
                     b.Navigation("UpdatedByUser");
                 });
 
+            modelBuilder.Entity("TamircimAPI.Models.EmailVerificationToken", b =>
+                {
+                    b.HasOne("TamircimAPI.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("TamircimAPI.Models.RefreshToken", b =>
                 {
                     b.HasOne("TamircimAPI.Models.User", "User")
@@ -740,6 +840,17 @@ namespace TamircimAPI.Migrations
                     b.Navigation("UpdatedByUser");
                 });
 
+            modelBuilder.Entity("TamircimAPI.Models.User", b =>
+                {
+                    b.HasOne("TamircimAPI.Models.Tenant", "Tenant")
+                        .WithMany("Users")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
+                });
+
             modelBuilder.Entity("TamircimAPI.Models.UserPermission", b =>
                 {
                     b.HasOne("TamircimAPI.Models.User", "User")
@@ -759,6 +870,11 @@ namespace TamircimAPI.Migrations
             modelBuilder.Entity("TamircimAPI.Models.Device", b =>
                 {
                     b.Navigation("RepairRecords");
+                });
+
+            modelBuilder.Entity("TamircimAPI.Models.Tenant", b =>
+                {
+                    b.Navigation("Users");
                 });
 
             modelBuilder.Entity("TamircimAPI.Models.User", b =>

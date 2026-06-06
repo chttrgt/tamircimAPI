@@ -116,7 +116,14 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddHttpContextAccessor();
 
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
+// Tenant izolasyonu altyapısı (scoped): istek başına tenant bağlamı + RLS oturum
+// değişkenini ayarlayan connection interceptor.
+builder.Services.AddScoped<TamircimAPI.Services.Tenant.ITenantContext, TamircimAPI.Services.Tenant.TenantContext>();
+builder.Services.AddScoped<TamircimAPI.Data.Interceptors.TenantConnectionInterceptor>();
+
+// DbContext: scoped interceptor'ı (sp, options) overload'u ile ekliyoruz → interceptor
+// istek-scoped ITenantContext'i görür.
+builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
     options.UseNpgsql(
         connectionString,
         npgsqlOptions =>
@@ -125,10 +132,15 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
                 maxRetryCount: 5,
                 maxRetryDelay: TimeSpan.FromSeconds(10),
                 errorCodesToAdd: null);
-        }));
+        })
+    .AddInterceptors(sp.GetRequiredService<TamircimAPI.Data.Interceptors.TenantConnectionInterceptor>()));
 
 // Servis Kayıtları
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<TamircimAPI.Services.Email.IEmailSender, TamircimAPI.Services.Email.SmtpEmailSender>();
+// Bot koruması: Cloudflare Turnstile doğrulaması (siteverify HTTP çağrısı için HttpClient).
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<TamircimAPI.Services.Captcha.ICaptchaVerifier, TamircimAPI.Services.Captcha.TurnstileCaptchaVerifier>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IStaffService, StaffService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();

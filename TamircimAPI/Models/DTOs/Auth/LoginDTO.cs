@@ -8,12 +8,28 @@ namespace TamircimAPI.Models.DTOs.Auth
 
     public class RegisterDTO
     {
+        // Yeni teknik servisin (tenant) adı — kaydeden kişi bu dükkânın sahibi olur.
+        public string ShopName { get; set; } = string.Empty;
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public string? Title { get; set; }
         public string Branch { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        // Cloudflare Turnstile token'ı (istemcide widget üretir, sunucuda doğrulanır).
+        public string? CaptchaToken { get; set; }
+    }
+
+    // Kayıt artık otomatik giriş yapmaz: e-posta doğrulanana kadar tenant pasiftir.
+    public class RegisterResponseDTO
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+    }
+
+    public class ResendVerificationDTO
+    {
+        public string Email { get; set; } = string.Empty;
     }
 
     public class LoginResponseDTO

@@ -1,9 +1,12 @@
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Data;
 using TamircimAPI.Exceptions;
 using TamircimAPI.Models;
 using TamircimAPI.Models.DTOs.Auth;
 using TamircimAPI.Models.Enums;
+using TamircimAPI.Services.Captcha;
+using TamircimAPI.Services.Email;
 using TamircimAPI.Services.Token;
 
 namespace TamircimAPI.Services.Auth
@@ -13,16 +16,23 @@ namespace TamircimAPI.Services.Auth
         private readonly ApplicationDbContext _db;
         private readonly ITokenService _tokenService;
         private readonly IConfiguration _configuration;
+        private readonly IEmailSender _emailSender;
+        private readonly ICaptchaVerifier _captcha;
 
-        public AuthService(ApplicationDbContext db, ITokenService tokenService, IConfiguration configuration)
+        public AuthService(
+            ApplicationDbContext db,
+            ITokenService tokenService,
+            IConfiguration configuration,
+            IEmailSender emailSender,
+            ICaptchaVerifier captcha)
         {
             _db = db;
             _tokenService = tokenService;
             _configuration = configuration;
+            _emailSender = emailSender;
+            _captcha = captcha;
         }
 
-        // LoginResponseDTO'yu tek yerden kurar. Çağıran, user.Permissions'ı YÜKLEMİŞ
-        // olmalıdır (Include) — yoksa izinler boş döner.
         private static LoginResponseDTO BuildLoginResponse(User user, string accessToken, string refreshToken) => new()
         {
             AccessToken = accessToken,
@@ -38,83 +48,179 @@ namespace TamircimAPI.Services.Auth
             MustChangePassword = user.MustChangePassword,
         };
 
-        public Task<bool> IsInitializedAsync() => _db.Users.AnyAsync();
-
-        public async Task<LoginResponseDTO> RegisterAsync(RegisterDTO dto, string ipAddress)
+        // Açık self-servis kayıt: yeni tenant (dükkân) + sahip kullanıcı oluşturur.
+        // Tenant IsActive=false → e-posta doğrulanana kadar giriş yapılamaz. Otomatik
+        // giriş YAPILMAZ. E-posta GLOBAL benzersizdir (tenant filtresini bypass eden
+        // IgnoreQueryFilters ile kontrol edilir).
+        public async Task<RegisterResponseDTO> RegisterAsync(RegisterDTO dto, string ipAddress, string lang)
         {
-            // İlk-kurulum modeli: kayıt yalnızca sistemde hiç kullanıcı yokken (ilk sahip)
-            // açıktır. Kurulduktan sonra açık kayıt kapalıdır — çalışan ekleme ayrı bir
-            // yetkili akışla yapılmalıdır (henüz mevcut değil).
-            if (await _db.Users.AnyAsync())
+            // Bot/sahte kayıt koruması: her şeyden önce captcha'yı doğrula (fail-closed).
+            if (!await _captcha.VerifyAsync(dto.CaptchaToken, ipAddress))
                 throw new BusinessRuleException(
-                    "Kayıt kapalı. Sistem zaten kurulmuş.",
-                    "REGISTRATION_CLOSED");
+                    "Doğrulama başarısız. Lütfen tekrar deneyin.", "CAPTCHA_FAILED");
 
-            var exists = await _db.Users.AnyAsync(u => u.Email == dto.Email);
-            if (exists)
-                throw new ArgumentException("Bu e-posta adresi zaten kayıtlı.");
+            var email = dto.Email.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(email))
+                throw new ArgumentException("E-posta zorunludur.");
+            if (string.IsNullOrWhiteSpace(dto.ShopName))
+                throw new ArgumentException("Dükkân adı zorunludur.");
+            if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 8)
+                throw new ArgumentException("Şifre en az 8 karakter olmalıdır.");
+
+            // Tenant filtresini bypass et: e-posta tüm sistemde benzersiz olmalı.
+            var emailTaken = await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email);
+            if (emailTaken)
+                throw new BusinessRuleException("Bu e-posta adresi zaten kayıtlı.", "EMAIL_ALREADY_EXISTS");
 
             var salt = BCrypt.Net.BCrypt.GenerateSalt(12);
             var hash = BCrypt.Net.BCrypt.HashPassword(dto.Password, salt);
+            var verificationToken = GenerateUrlSafeToken();
 
-            var user = new User
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                FirstName = dto.FirstName.Trim(),
-                LastName = dto.LastName.Trim(),
-                Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
-                Branch = dto.Branch.Trim(),
-                Email = dto.Email.Trim().ToLowerInvariant(),
-                PasswordHash = hash,
-                PasswordSalt = salt,
-                IsActive = true,
-                // İlk kayıt = dükkân sahibi → tüm izinlere örtük sahip.
-                Role = UserRole.Owner,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-            };
+                await using var tx = await _db.Database.BeginTransactionAsync();
 
-            _db.Users.Add(user);
-            await _db.SaveChangesAsync();
+                var tenant = new Models.Tenant
+                {
+                    Name = dto.ShopName.Trim(),
+                    Branch = dto.Branch.Trim(),
+                    IsActive = false,
+                };
+                _db.Tenants.Add(tenant);
+                await _db.SaveChangesAsync(); // tenant.Id üret
 
-            var accessToken = _tokenService.GenerateAccessToken(user);
-            var refreshToken = _tokenService.GenerateRefreshToken();
-            var expireDays = int.Parse(_configuration["Jwt:RefreshTokenExpireDays"] ?? "7");
+                var user = new User
+                {
+                    TenantId = tenant.Id, // bağlam yok → açıkça set (SetTenantIdFields izin verir)
+                    FirstName = dto.FirstName.Trim(),
+                    LastName = dto.LastName.Trim(),
+                    Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
+                    Email = email,
+                    PasswordHash = hash,
+                    PasswordSalt = salt,
+                    IsActive = true,
+                    Role = UserRole.Owner, // ilk kayıt = dükkân sahibi
+                };
+                _db.Users.Add(user);
+                await _db.SaveChangesAsync(); // user.Id üret
 
-            _db.RefreshTokens.Add(new RefreshToken
-            {
-                UserId = user.Id,
-                Token = refreshToken,
-                ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
-                CreatedByIp = ipAddress
+                _db.EmailVerificationTokens.Add(new EmailVerificationToken
+                {
+                    UserId = user.Id,
+                    Token = verificationToken,
+                    ExpiresAt = DateTime.UtcNow.AddHours(24),
+                });
+                await _db.SaveChangesAsync();
+
+                await tx.CommitAsync();
             });
 
+            await SendVerificationAsync(email, $"{dto.FirstName} {dto.LastName}".Trim(), verificationToken, lang);
+
+            return new RegisterResponseDTO
+            {
+                Email = email,
+                Message = "Kayıt alındı. Hesabını etkinleştirmek için e-postandaki doğrulama bağlantısına tıkla.",
+            };
+        }
+
+        public async Task<bool> VerifyEmailAsync(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return false;
+
+            // EmailVerificationToken'ın tenant filtresi yok; User filtreli olduğundan
+            // (bağlam=0) IgnoreQueryFilters ile yükle.
+            var vt = await _db.EmailVerificationTokens
+                .IgnoreQueryFilters()
+                .Include(t => t.User)
+                .FirstOrDefaultAsync(t => t.Token == token);
+
+            if (vt == null || !vt.IsValid) return false;
+
+            var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == vt.User.TenantId);
+            if (tenant == null) return false;
+
+            vt.ConsumedAt = DateTime.UtcNow;
+            tenant.IsActive = true;
+            await _db.SaveChangesAsync();
+            return true;
+        }
+
+        // Numaralandırma sızıntısı yapmaz: e-posta yoksa/doğrulanmışsa sessizce başarı döner.
+        public async Task ResendVerificationAsync(string email, string lang)
+        {
+            var normalized = email.Trim().ToLowerInvariant();
+            var user = await _db.Users
+                .IgnoreQueryFilters()
+                .Include(u => u.Tenant)
+                .FirstOrDefaultAsync(u => u.Email == normalized && u.Role == UserRole.Owner);
+
+            if (user == null || user.Tenant.IsActive) return;
+
+            // E-posta başına cooldown: IP-bazlı rate limit'in ötesinde, aynı adrese çok
+            // sık mail gönderimini (spam + SMTP kotası tüketimi) engeller. Son token 2 dk
+            // içinde üretildiyse sessizce çık (bilgi sızdırmamak için yine başarı dönülür).
+            var lastSentAt = await _db.EmailVerificationTokens
+                .IgnoreQueryFilters()
+                .Where(t => t.UserId == user.Id)
+                .OrderByDescending(t => t.CreatedAt)
+                .Select(t => (DateTime?)t.CreatedAt)
+                .FirstOrDefaultAsync();
+            if (lastSentAt.HasValue && DateTime.UtcNow - lastSentAt.Value < TimeSpan.FromMinutes(2))
+                return;
+
+            // Eski geçerli token'ları tüket, yeni üret.
+            var oldTokens = await _db.EmailVerificationTokens
+                .IgnoreQueryFilters()
+                .Where(t => t.UserId == user.Id && t.ConsumedAt == null)
+                .ToListAsync();
+            foreach (var t in oldTokens)
+                t.ConsumedAt = DateTime.UtcNow;
+
+            var newToken = GenerateUrlSafeToken();
+            _db.EmailVerificationTokens.Add(new EmailVerificationToken
+            {
+                UserId = user.Id,
+                Token = newToken,
+                ExpiresAt = DateTime.UtcNow.AddHours(24),
+            });
             await _db.SaveChangesAsync();
 
-            return BuildLoginResponse(user, accessToken, refreshToken);
+            await SendVerificationAsync(user.Email, user.FullName, newToken, lang);
         }
 
         public async Task<LoginResponseDTO> LoginAsync(LoginDTO dto, string ipAddress)
         {
+            var email = dto.Email.Trim().ToLowerInvariant();
+
+            // Login tenant bağlamından önce çalışır → global arama için IgnoreQueryFilters.
             var user = await _db.Users
+                .IgnoreQueryFilters()
                 .Include(u => u.Permissions)
-                .FirstOrDefaultAsync(u => u.Email == dto.Email && u.IsActive);
+                .Include(u => u.Tenant)
+                .FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
 
             if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
                 throw new UnauthorizedAccessException("E-posta veya şifre hatalı.");
 
+            if (!user.Tenant.IsActive)
+                throw new BusinessRuleException(
+                    "Hesabın henüz doğrulanmadı. Lütfen e-postandaki doğrulama bağlantısına tıkla.",
+                    "EMAIL_NOT_VERIFIED");
+
             var accessToken = _tokenService.GenerateAccessToken(user);
             var refreshToken = _tokenService.GenerateRefreshToken();
-
             var expireDays = int.Parse(_configuration["Jwt:RefreshTokenExpireDays"] ?? "7");
 
             _db.RefreshTokens.Add(new RefreshToken
             {
+                TenantId = user.TenantId,
                 UserId = user.Id,
                 Token = refreshToken,
                 ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
                 CreatedByIp = ipAddress
             });
-
             await _db.SaveChangesAsync();
 
             return BuildLoginResponse(user, accessToken, refreshToken);
@@ -122,7 +228,9 @@ namespace TamircimAPI.Services.Auth
 
         public async Task<LoginResponseDTO> RefreshTokenAsync(string refreshToken, string ipAddress)
         {
+            // Refresh public akış: User tenant-filtreli olduğundan IgnoreQueryFilters şart.
             var token = await _db.RefreshTokens
+                .IgnoreQueryFilters()
                 .Include(t => t.User)
                     .ThenInclude(u => u.Permissions)
                 .FirstOrDefaultAsync(t => t.Token == refreshToken);
@@ -140,25 +248,24 @@ namespace TamircimAPI.Services.Auth
 
             _db.RefreshTokens.Add(new RefreshToken
             {
+                TenantId = token.UserId == 0 ? token.TenantId : token.User.TenantId,
                 UserId = token.UserId,
                 Token = newRefreshToken,
                 ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
                 CreatedByIp = ipAddress
             });
-
             await _db.SaveChangesAsync();
 
             var accessToken = _tokenService.GenerateAccessToken(token.User);
-
             return BuildLoginResponse(token.User, accessToken, newRefreshToken);
         }
 
         public async Task<UpdateProfileResponseDTO> UpdateProfileAsync(int userId, UpdateProfileDTO dto, string ipAddress)
         {
-            // İzinleri de yükle: e-posta/şifre değişince yeni token üretilirse izin
-            // claim'leri kaybolmasın.
+            // Kimlikli istek → tenant bağlamı var; kullanıcı kendi tenant'ında, normal filtre yeterli.
             var user = await _db.Users
                 .Include(u => u.Permissions)
+                .Include(u => u.Tenant)
                 .FirstOrDefaultAsync(u => u.Id == userId)
                 ?? throw new KeyNotFoundException("Kullanıcı bulunamadı.");
 
@@ -166,14 +273,15 @@ namespace TamircimAPI.Services.Auth
             var normalizedEmail = dto.Email.Trim().ToLowerInvariant();
             if (normalizedEmail != originalEmail)
             {
-                var emailTaken = await _db.Users.AnyAsync(u => u.Email == normalizedEmail && u.Id != userId);
+                // E-posta global benzersiz → tüm sistemde kontrol.
+                var emailTaken = await _db.Users.IgnoreQueryFilters()
+                    .AnyAsync(u => u.Email == normalizedEmail && u.Id != userId);
                 if (emailTaken)
                     throw new ArgumentException("Bu e-posta adresi zaten kayıtlı.");
             }
 
             bool passwordChanged = !string.IsNullOrWhiteSpace(dto.NewPassword);
 
-            // Şifre değişimi isteniyorsa mevcut şifreyi doğrula
             if (passwordChanged)
             {
                 if (string.IsNullOrWhiteSpace(dto.CurrentPassword))
@@ -184,7 +292,6 @@ namespace TamircimAPI.Services.Auth
                 var newSalt = BCrypt.Net.BCrypt.GenerateSalt(12);
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, newSalt);
                 user.PasswordSalt = newSalt;
-                // Çalışan geçici şifresini değiştirdi → zorunlu değişim bayrağı kalkar.
                 user.MustChangePassword = false;
             }
 
@@ -199,9 +306,6 @@ namespace TamircimAPI.Services.Auth
             string? newAccessToken = null;
             string? newRefreshToken = null;
 
-            // E-posta veya şifre değişti → tüm oturumları kapat, mevcut cihaza yeni token ver.
-            // E-posta: JWT claim'i güncellenmesi gerekir.
-            // Şifre: diğer cihazlardaki oturumlar geçersizleşmelidir.
             if (normalizedEmail != originalEmail || passwordChanged)
             {
                 var revokeReason = passwordChanged && normalizedEmail != originalEmail
@@ -209,6 +313,7 @@ namespace TamircimAPI.Services.Auth
                     : passwordChanged ? "Password changed" : "Email changed";
 
                 var oldTokens = await _db.RefreshTokens
+                    .IgnoreQueryFilters()
                     .Where(t => t.UserId == userId && t.RevokedAt == null)
                     .ToListAsync();
                 foreach (var rt in oldTokens)
@@ -223,6 +328,7 @@ namespace TamircimAPI.Services.Auth
                 var expireDays = int.Parse(_configuration["Jwt:RefreshTokenExpireDays"] ?? "7");
                 _db.RefreshTokens.Add(new RefreshToken
                 {
+                    TenantId = user.TenantId,
                     UserId = user.Id,
                     Token = newRefreshTokenValue,
                     ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
@@ -240,7 +346,7 @@ namespace TamircimAPI.Services.Auth
                 LastName = user.LastName,
                 Title = user.Title,
                 Email = user.Email,
-                Branch = user.Branch,
+                Branch = user.Tenant.Branch,
                 NewAccessToken = newAccessToken,
                 NewRefreshToken = newRefreshToken,
             };
@@ -249,6 +355,7 @@ namespace TamircimAPI.Services.Auth
         public async Task RevokeTokenAsync(string refreshToken, string ipAddress)
         {
             var token = await _db.RefreshTokens
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(t => t.Token == refreshToken);
 
             if (token == null || !token.IsActive)
@@ -259,6 +366,24 @@ namespace TamircimAPI.Services.Auth
             token.RevokeReason = "Revoked by user";
 
             await _db.SaveChangesAsync();
+        }
+
+        private async Task SendVerificationAsync(string email, string name, string token, string lang)
+        {
+            var baseUrl = (Environment.GetEnvironmentVariable("APP_PUBLIC_URL")
+                ?? _configuration["App:PublicUrl"]
+                ?? "").TrimEnd('/');
+            var link = $"{baseUrl}/api/auth/verify-email?token={Uri.EscapeDataString(token)}";
+            await _emailSender.SendVerificationEmailAsync(email, name, link, lang);
+        }
+
+        private static string GenerateUrlSafeToken()
+        {
+            var bytes = new byte[32];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(bytes);
+            return Convert.ToBase64String(bytes)
+                .Replace('+', '-').Replace('/', '_').TrimEnd('=');
         }
     }
 }

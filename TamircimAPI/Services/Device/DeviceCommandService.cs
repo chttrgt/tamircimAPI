@@ -1,9 +1,9 @@
-using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Data;
 using TamircimAPI.Models.DTOs.Device;
 using TamircimAPI.Models.Enums;
 using TamircimAPI.Services.Common;
+using TamircimAPI.Services.Tenant;
 
 namespace TamircimAPI.Services.Device
 {
@@ -12,18 +12,18 @@ namespace TamircimAPI.Services.Device
         private readonly ApplicationDbContext _db;
         private readonly IDeviceQueryService _query;
         private readonly ICodeGenerator _codes;
-        private readonly IHttpContextAccessor _http;
+        private readonly ITenantContext _tenant;
 
         public DeviceCommandService(
             ApplicationDbContext db,
             IDeviceQueryService query,
             ICodeGenerator codes,
-            IHttpContextAccessor http)
+            ITenantContext tenant)
         {
             _db = db;
             _query = query;
             _codes = codes;
-            _http = http;
+            _tenant = tenant;
         }
 
         // Yeni fiziksel cihaz + ilk servis kaydını (geliş) birlikte oluşturur.
@@ -37,7 +37,7 @@ namespace TamircimAPI.Services.Device
             if (!customerExists)
                 throw new KeyNotFoundException($"Müşteri bulunamadı: {dto.CustomerId}");
 
-            var deviceType = await ResolveDeviceTypeFromUserBranchAsync();
+            var deviceType = await ResolveDeviceTypeFromTenantBranchAsync();
 
             var strategy = _db.Database.CreateExecutionStrategy();
             var deviceId = await strategy.ExecuteAsync(async () =>
@@ -107,15 +107,16 @@ namespace TamircimAPI.Services.Device
             await _db.SaveChangesAsync();
         }
 
-        private async Task<DeviceType> ResolveDeviceTypeFromUserBranchAsync()
+        // Cihaz tipi, tenant'ın (dükkânın) branch'inden türetilir → dükkân genelinde tutarlı.
+        private async Task<DeviceType> ResolveDeviceTypeFromTenantBranchAsync()
         {
-            var userIdStr = _http.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdStr, out var userId))
+            var tid = _tenant.TenantId;
+            if (tid == null)
                 return DeviceType.Other;
 
-            var branch = await _db.Users
-                .Where(u => u.Id == userId)
-                .Select(u => u.Branch)
+            var branch = await _db.Tenants
+                .Where(t => t.Id == tid.Value)
+                .Select(t => t.Branch)
                 .FirstOrDefaultAsync();
 
             return branch switch

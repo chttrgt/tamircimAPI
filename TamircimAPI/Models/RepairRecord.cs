@@ -4,9 +4,10 @@ using TamircimAPI.Models.Interfaces;
 namespace TamircimAPI.Models
 {
     // Servis kaydı / iş emri. Cihazın TEK bir getirilişini (ziyaretini) temsil eder.
-    public class RepairRecord : IAuditable, ISoftDeletable
+    public class RepairRecord : IAuditable, ISoftDeletable, ITenantOwned
     {
         public int Id { get; set; }
+        public int TenantId { get; set; }
         public int DeviceId { get; set; }
 
         // Müşteriye verilen iş emri numarası, örn. "25-000042". Otomatik, benzersiz.

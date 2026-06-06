@@ -1,15 +1,20 @@
 using TamircimAPI.Models.Enums;
+using TamircimAPI.Models.Interfaces;
 
 namespace TamircimAPI.Models
 {
-    public class User
+    public class User : ITenantOwned
     {
         public int Id { get; set; }
+
+        // Kullanıcının ait olduğu teknik servis (tenant). Sahip ve personeller aynı
+        // TenantId'yi paylaşır. Insert'te sunucu tarafında set edilir.
+        public int TenantId { get; set; }
+
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? Title { get; set; }
-        public string Branch { get; set; } = string.Empty;
         public string PasswordHash { get; set; } = string.Empty;
         public string PasswordSalt { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
@@ -27,6 +32,7 @@ namespace TamircimAPI.Models
 
         public string FullName => $"{FirstName} {LastName}";
 
+        public Tenant Tenant { get; set; } = null!;
         public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
         public ICollection<UserPermission> Permissions { get; set; } = new List<UserPermission>();
     }

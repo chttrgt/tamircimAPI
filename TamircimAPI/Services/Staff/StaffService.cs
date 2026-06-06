@@ -51,15 +51,12 @@ namespace TamircimAPI.Services.Staff
             ValidatePassword(dto.TempPassword);
             var perms = ValidatePermissions(dto.Permissions);
 
-            if (await _db.Users.AnyAsync(u => u.Email == email))
+            // E-posta global benzersiz → tüm sistemde kontrol (tenant filtresini bypass et).
+            if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email))
                 throw new BusinessRuleException("Bu e-posta adresi zaten kayıtlı.", "EMAIL_ALREADY_EXISTS");
 
-            // Çalışan, dükkânın (sahibin) branch'ini devralır → cihaz tipi türetimi tutarlı kalır.
-            var branch = await _db.Users
-                .Where(u => u.Role == UserRole.Owner)
-                .Select(u => u.Branch)
-                .FirstOrDefaultAsync() ?? string.Empty;
-
+            // Branch artık tenant düzeyinde (cihaz tipi türetimi için); personele
+            // kopyalanmaz. TenantId, SaveChanges içinde mevcut tenant'tan otomatik atanır.
             var salt = BCrypt.Net.BCrypt.GenerateSalt(12);
             var user = new User
             {
@@ -67,7 +64,6 @@ namespace TamircimAPI.Services.Staff
                 LastName = dto.LastName.Trim(),
                 Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
                 Email = email,
-                Branch = branch,
                 Role = UserRole.Employee,
                 IsActive = true,
                 MustChangePassword = true,
