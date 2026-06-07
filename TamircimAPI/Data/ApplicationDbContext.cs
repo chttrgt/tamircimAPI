@@ -1,5 +1,9 @@
+using System.Linq.Expressions;
+using System.Reflection;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 using TamircimAPI.Models;
 using TamircimAPI.Models.Interfaces;
 using TamircimAPI.Services.Tenant;
@@ -48,6 +52,7 @@ namespace TamircimAPI.Data
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
+            CascadeSoftDelete();
             SetTenantIdFields();
             SetAuditableFields();
             var pendingAuditEntries = CollectAuditEntries();
@@ -62,6 +67,7 @@ namespace TamircimAPI.Data
 
         public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
+            CascadeSoftDelete();
             SetTenantIdFields();
             SetAuditableFields();
             var pendingAuditEntries = CollectAuditEntries();
@@ -140,18 +146,111 @@ namespace TamircimAPI.Data
                 }
             }
 
-            if (userId == null) return;
-
+            // DeletedAt damgası kullanıcıdan BAĞIMSIZ atılır: fotoğraf GC'si DeletedAt'e
+            // bakar, dolayısıyla kullanıcısız (sistem) bir silmede bile retention sayacı
+            // başlamalı. DeletedByUserId yalnızca kullanıcı biliniyorsa set edilir.
             foreach (var entry in ChangeTracker.Entries<ISoftDeletable>())
             {
                 if (entry.State == EntityState.Modified &&
                     entry.Entity.IsDeleted &&
-                    entry.Entity.DeletedByUserId == null)
+                    entry.Entity.DeletedAt == null)
                 {
                     entry.Entity.DeletedAt = DateTime.UtcNow;
-                    entry.Entity.DeletedByUserId = userId;
+                    if (userId != null)
+                        entry.Entity.DeletedByUserId = userId;
                 }
             }
+        }
+
+        // Yalnızca sahiplik ilişkilerini takip et; "kim yaptı" (CreatedBy/UpdatedBy/DeletedBy)
+        // bağları SetNull olduğundan otomatik dışarıda kalır.
+        private static readonly DeleteBehavior[] _cascadeBehaviors =
+            { DeleteBehavior.Cascade, DeleteBehavior.ClientCascade, DeleteBehavior.Restrict };
+
+        private static readonly MethodInfo _setMethod = typeof(DbContext).GetMethods()
+            .First(m => m.Name == nameof(DbContext.Set)
+                     && m.IsGenericMethodDefinition
+                     && m.GetParameters().Length == 0);
+
+        private static readonly MethodInfo _efPropertyMethod =
+            typeof(EF).GetMethod(nameof(EF.Property))!;
+
+        // Soft-delete cascade. Bir kayıt IsDeleted false→true geçtiğinde, ona FK ile bağlı
+        // (sahiplik: Cascade/Restrict) ve kendisi de ISoftDeletable olan çocukları özyinelemeli
+        // soft-delete eder. Müşteri→Cihaz→{ServisKaydı, Fotoğraf} zinciri tek transaction'da akar.
+        // Model metadata'sından sürülür → navigation property olmasa bile (örn. DevicePhoto)
+        // çocuk bulunur; yeni eklenen sahiplik tabloları otomatik kapsanır. Çocuklar global query
+        // filter üzerinden yüklendiğinden tenant-scope ve "zaten silinmiş" hariç tutma bedavadır.
+        private void CascadeSoftDelete()
+        {
+            var roots = ChangeTracker.Entries<ISoftDeletable>()
+                .Where(e =>
+                {
+                    if (e.State != EntityState.Modified) return false;
+                    var p = e.Property(nameof(ISoftDeletable.IsDeleted));
+                    return p.IsModified && p.CurrentValue is true && p.OriginalValue is false;
+                })
+                .Select(e => (EntityEntry)e)
+                .ToList();
+
+            if (roots.Count == 0) return;
+
+            var queue = new Queue<EntityEntry>(roots);
+            var visited = new HashSet<(Type, object)>();
+
+            while (queue.Count > 0)
+            {
+                var parent = queue.Dequeue();
+
+                var pk = parent.Metadata.FindPrimaryKey();
+                if (pk is null || pk.Properties.Count != 1) continue;
+
+                var pkValue = parent.Property(pk.Properties[0].Name).CurrentValue;
+                if (pkValue is null) continue;
+                if (!visited.Add((parent.Metadata.ClrType, pkValue))) continue;
+
+                foreach (var fk in parent.Metadata.GetReferencingForeignKeys())
+                {
+                    if (!_cascadeBehaviors.Contains(fk.DeleteBehavior)) continue;
+
+                    var childClrType = fk.DeclaringEntityType.ClrType;
+                    if (!typeof(ISoftDeletable).IsAssignableFrom(childClrType)) continue;
+                    if (fk.Properties.Count != 1) continue;
+
+                    foreach (var child in LoadLiveChildren(childClrType, fk.Properties[0], pkValue))
+                    {
+                        var sd = (ISoftDeletable)child;
+                        if (sd.IsDeleted) continue;   // güvenlik: query filter zaten eler
+                        sd.IsDeleted = true;
+                        queue.Enqueue(Entry(child));
+                    }
+                }
+            }
+        }
+
+        // Set<TChild>().Where(c => EF.Property<fk>(c, "FkName") == parentKey) sorgusunu
+        // çalışma zamanında, tip bilinmeden kurar. Global query filter uygulanır.
+        private IEnumerable<object> LoadLiveChildren(Type childClrType, IProperty fkProperty, object parentKeyValue)
+        {
+            var dbSet = (IQueryable)_setMethod.MakeGenericMethod(childClrType).Invoke(this, null)!;
+
+            var param = Expression.Parameter(childClrType, "c");
+            var fkClrType = fkProperty.ClrType;
+
+            Expression fkAccess = Expression.Call(
+                _efPropertyMethod.MakeGenericMethod(fkClrType),
+                param,
+                Expression.Constant(fkProperty.Name));
+
+            Expression key = Expression.Constant(parentKeyValue);
+            if (key.Type != fkClrType) key = Expression.Convert(key, fkClrType);
+
+            var predicate = Expression.Lambda(Expression.Equal(fkAccess, key), param);
+            var where = Expression.Call(
+                typeof(Queryable), nameof(Queryable.Where), new[] { childClrType },
+                dbSet.Expression, Expression.Quote(predicate));
+
+            return dbSet.Provider.CreateQuery(where).Cast<object>().ToList();
         }
 
         private List<(object Entity, string EntityType, string Action, int? UserId, string? ChangedFields)> CollectAuditEntries()

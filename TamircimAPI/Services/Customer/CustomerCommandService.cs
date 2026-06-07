@@ -109,6 +109,8 @@ namespace TamircimAPI.Services.Customer
             var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == id)
                 ?? throw new KeyNotFoundException($"Müşteri bulunamadı: {id}");
 
+            // Cihazlar + servis kayıtları + fotoğraflar DbContext'teki merkezî
+            // soft-delete cascade tarafından otomatik silinir.
             customer.IsDeleted = true;
             await _db.SaveChangesAsync();
         }

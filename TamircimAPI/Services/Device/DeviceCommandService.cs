@@ -103,6 +103,8 @@ namespace TamircimAPI.Services.Device
             var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == id)
                 ?? throw new KeyNotFoundException($"Cihaz bulunamadı: {id}");
 
+            // Servis kayıtları + fotoğraflar DbContext'teki merkezî soft-delete
+            // cascade tarafından otomatik silinir.
             device.IsDeleted = true;
             await _db.SaveChangesAsync();
         }
