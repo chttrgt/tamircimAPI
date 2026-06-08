@@ -26,7 +26,7 @@ namespace TamircimAPI.Services.Dashboard
                 .Include(d => d.Customer)
                 .ToListAsync();
 
-            var active = GetActiveWaitingDevices(devices);
+            var active = GetOpenDevices(devices);
 
             var stats = await GetStatsAsync(active, now);
             var recentCustomers = GetRecentCustomers(devices);
@@ -42,9 +42,10 @@ namespace TamircimAPI.Services.Dashboard
             };
         }
 
-        // Açıkta bekleyen iş = cihazın AÇIK ziyaretinin (son teslimden sonraki kayıtlar)
-        // güncel durumu "Beklemede". Her cihaz en fazla bir kez döner.
-        private static List<ActiveDevice> GetActiveWaitingDevices(List<Models.Device> devices)
+        // Açık iş = cihazın EN SON kaydı teslim EDİLMEMİŞ (durum fark etmez: Beklemede /
+        // Onarıldı / Onarılmadı). Endüstri standardı "açık iş emri" mantığı: iş, müşteri
+        // teslim alana kadar açıktır; yaşlanma geliş tarihinden sayılır. Her cihaz tek kez döner.
+        private static List<ActiveDevice> GetOpenDevices(List<Models.Device> devices)
         {
             var result = new List<ActiveDevice>();
             foreach (var d in devices)
@@ -53,8 +54,7 @@ namespace TamircimAPI.Services.Dashboard
                 if (ordered.Count == 0) continue;
 
                 var latest = ordered[^1];
-                if (latest.IsDelivered) continue;                       // güncel ziyaret kapalı (teslim edildi)
-                if (latest.Status != RepairStatus.Waiting) continue;    // güncel durum bekleme değil
+                if (latest.IsDelivered) continue;   // güncel ziyaret kapalı (teslim edildi) → açık değil
 
                 // Açık ziyaretin başlangıcı = son teslim edilen kayıttan sonraki ilk kayıt
                 // (hiç teslim yoksa cihazın ilk kaydı). n. gelişte eski ziyaretin tarihi alınmaz.
