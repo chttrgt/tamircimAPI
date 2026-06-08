@@ -36,10 +36,35 @@ namespace TamircimAPI.Controllers
             return Ok(users);
         }
 
+        [HttpGet("counts")]
+        public async Task<IActionResult> GetCounts([FromQuery] int? userId)
+        {
+            var query = _db.AuditLogs.AsQueryable();
+            if (userId.HasValue)
+                query = query.Where(a => a.UserId == userId.Value);
+
+            var counts = await query
+                .GroupBy(a => a.Action)
+                .Select(g => new { Action = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var total = counts.Sum(c => c.Count);
+            var result = new Dictionary<string, int>
+            {
+                ["total"]  = total,
+                ["Create"] = counts.FirstOrDefault(c => c.Action == "Create")?.Count ?? 0,
+                ["Update"] = counts.FirstOrDefault(c => c.Action == "Update")?.Count ?? 0,
+                ["Delete"] = counts.FirstOrDefault(c => c.Action == "Delete")?.Count ?? 0,
+            };
+
+            return Ok(result);
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetLogs(
             [FromQuery] int? userId,
             [FromQuery] string? entityType,
+            [FromQuery] string? action,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 30)
         {
@@ -55,6 +80,9 @@ namespace TamircimAPI.Controllers
 
             if (!string.IsNullOrWhiteSpace(entityType))
                 query = query.Where(a => a.EntityType == entityType);
+
+            if (!string.IsNullOrWhiteSpace(action))
+                query = query.Where(a => a.Action == action);
 
             var total = await query.CountAsync();
             var items = await query
