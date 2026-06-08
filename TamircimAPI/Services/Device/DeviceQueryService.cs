@@ -105,20 +105,21 @@ namespace TamircimAPI.Services.Device
 
             var visits = new List<CustomerVisitDTO>();
 
-            // Geçmiş = ZİYARET başına bir satır. Bir ziyaret, "Beklemede" (intake) kaydıyla
-            // başlar; sonraki "Onarıldı/Onarılmadı" kayıtları aynı ziyarete (durum güncellemesi)
-            // eklenir. Her ziyaret kendi son durumuyla gösterilir.
-            // Tüm işlem süreci ise cihaz detayındaki Servis Kayıtları'nda durur.
+            // Geçmiş = ZİYARET başına bir satır. Bir ziyaret, cihazın o gelişinde açılan
+            // tüm kayıtları (intake + durum güncellemeleri, Waiting dahil) kapsar ve kendi
+            // son durumuyla gösterilir. Yeni bir ziyaret (n. geliş) yalnızca önceki ziyaret
+            // TESLİM edildikten sonra açılan ilk kayıtla başlar — Waiting durumu yeni ziyaret
+            // başlatmaz. Tüm işlem süreci cihaz detayındaki Servis Kayıtları'nda durur.
             foreach (var d in devices)
             {
                 var ordered = d.RepairRecords.OrderBy(r => r.ReceivedAt).ToList();
                 if (ordered.Count == 0) continue;
 
-                // Ziyaretlere grupla
+                // Ziyaretlere grupla — sınır yalnızca teslim (IsDelivered)
                 var groups = new List<List<Models.RepairRecord>>();
                 foreach (var r in ordered)
                 {
-                    if (r.Status == RepairStatus.Waiting || groups.Count == 0)
+                    if (groups.Count == 0 || groups[^1][^1].IsDelivered)
                         groups.Add(new List<Models.RepairRecord> { r });
                     else
                         groups[^1].Add(r);

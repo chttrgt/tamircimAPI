@@ -23,10 +23,20 @@ namespace TamircimAPI.Services.Dashboard
             // Cihazı olmayan müşterilerde varsayılan tür, giriş yapan kullanıcının branşı olsun.
             var defaultDeviceType = await GetCurrentUserBranchAsync();
 
-            var stats = await GetStatsAsync(now);
+            // Cihazın GÜNCEL durumu = EN SON servis kaydı (DeviceQueryService ile aynı mantık).
+            // Aktif/bekleyen iş = en son kaydı teslim edilmemiş ve "Beklemede" olan CİHAZ.
+            // Böylece bir cihaz, birden çok Waiting kaydı olsa bile tek kez sayılır/listelenir.
+            var devices = await _db.Devices
+                .Include(d => d.RepairRecords)
+                .Include(d => d.Customer)
+                .ToListAsync();
+
+            var active = GetActiveWaitingDevices(devices);
+
+            var stats = await GetStatsAsync(active, now);
             var recentCustomers = await GetRecentCustomersAsync(defaultDeviceType);
-            var overdueDevices = await GetOverdueDevicesAsync(now);
-            var waitingForParts = await GetWaitingForPartsAsync(now);
+            var overdueDevices = GetOverdueDevices(active, now);
+            var waitingForParts = GetActiveRepairs(active, now);
 
             return new DashboardResponseDTO
             {
@@ -37,29 +47,43 @@ namespace TamircimAPI.Services.Dashboard
             };
         }
 
-        private async Task<DashboardStatsDTO> GetStatsAsync(DateTime now)
+        // Açıkta bekleyen iş = cihazın AÇIK ziyaretinin (son teslimden sonraki kayıtlar)
+        // güncel durumu "Beklemede". Her cihaz en fazla bir kez döner.
+        private static List<ActiveDevice> GetActiveWaitingDevices(List<Models.Device> devices)
+        {
+            var result = new List<ActiveDevice>();
+            foreach (var d in devices)
+            {
+                var ordered = d.RepairRecords.OrderBy(r => r.ReceivedAt).ToList();
+                if (ordered.Count == 0) continue;
+
+                var latest = ordered[^1];
+                if (latest.IsDelivered) continue;                       // güncel ziyaret kapalı (teslim edildi)
+                if (latest.Status != RepairStatus.Waiting) continue;    // güncel durum bekleme değil
+
+                // Açık ziyaretin başlangıcı = son teslim edilen kayıttan sonraki ilk kayıt
+                // (hiç teslim yoksa cihazın ilk kaydı). n. gelişte eski ziyaretin tarihi alınmaz.
+                var lastDeliveredIdx = ordered.FindLastIndex(r => r.IsDelivered);
+                var intake = ordered[lastDeliveredIdx + 1];
+                result.Add(new ActiveDevice(d, intake.ReceivedAt));
+            }
+            return result;
+        }
+
+        private async Task<DashboardStatsDTO> GetStatsAsync(List<ActiveDevice> active, DateTime now)
         {
             var totalCustomers = await _db.Customers.CountAsync();
             var totalDevices = await _db.Devices.CountAsync();
 
-            // Açık (teslim edilmemiş) ve beklemedeki servis kayıtları
-            var totalWaiting = await _db.RepairRecords
-                .Where(r => !r.IsDelivered && r.Status == RepairStatus.Waiting)
-                .CountAsync();
-
             var sevenDaysAgo = now.AddDays(-7);
-            var totalOverdue = await _db.RepairRecords
-                .Where(r => !r.IsDelivered
-                         && r.Status == RepairStatus.Waiting
-                         && r.ReceivedAt < sevenDaysAgo)
-                .CountAsync();
 
             return new DashboardStatsDTO
             {
                 TotalCustomers = totalCustomers,
                 TotalDevices = totalDevices,
-                TotalWaiting = totalWaiting,
-                TotalOverdue = totalOverdue
+                // Kayıt değil CİHAZ sayılır → aynı cihaz birden çok Waiting kaydıyla şişmez.
+                TotalWaiting = active.Count,
+                TotalOverdue = active.Count(a => a.WaitingSince < sevenDaysAgo)
             };
         }
 
@@ -94,90 +118,48 @@ namespace TamircimAPI.Services.Dashboard
             }).ToList();
         }
 
-        private async Task<List<DashboardDeviceDTO>> GetOverdueDevicesAsync(DateTime now)
+        // En uzun süredir bekleyen (7+ gün) açık işler — her cihaz tek satır.
+        private List<DashboardDeviceDTO> GetOverdueDevices(List<ActiveDevice> active, DateTime now)
         {
             var sevenDaysAgo = now.AddDays(-7);
-
-            var waitingGroups = await _db.RepairRecords
-                .Where(r => !r.IsDelivered
-                         && r.Status == RepairStatus.Waiting
-                         && r.ReceivedAt < sevenDaysAgo)
-                .GroupBy(r => r.DeviceId)
-                .Select(g => new { DeviceId = g.Key, WaitingSince = g.Min(r => r.ReceivedAt) })
-                .OrderBy(g => g.WaitingSince)
+            return active
+                .Where(a => a.WaitingSince < sevenDaysAgo)
+                .OrderBy(a => a.WaitingSince)
                 .Take(5)
-                .ToListAsync();
-
-            var deviceIds = waitingGroups.Select(g => g.DeviceId).ToList();
-
-            var devices = await _db.Devices
-                .Where(d => deviceIds.Contains(d.Id))
-                .Select(d => new
-                {
-                    d.Id,
-                    d.CustomerId,
-                    CustomerName = d.Customer.FirstName + " " + d.Customer.LastName,
-                    Phone = d.Customer.Phone1,
-                    d.Brand,
-                    d.Model,
-                    DeviceTypeInt = (int)d.DeviceType,
-                    d.CreatedAt
-                })
-                .ToListAsync();
-
-            return waitingGroups.Select(g =>
-            {
-                var d = devices.First(x => x.Id == g.DeviceId);
-                return new DashboardDeviceDTO
-                {
-                    CustomerId = d.CustomerId,
-                    CustomerName = d.CustomerName,
-                    Phone = d.Phone,
-                    DeviceId = d.Id,
-                    Brand = d.Brand,
-                    Model = d.Model,
-                    DeviceType = DeviceTypeLabel(d.DeviceTypeInt),
-                    WaitingSince = g.WaitingSince,
-                    WaitingDays = (int)(now - g.WaitingSince).TotalDays,
-                    CreatedAt = d.CreatedAt
-                };
-            }).ToList();
+                .Select(a => MapActiveDevice(a, now))
+                .ToList();
         }
 
-        private async Task<List<DashboardDeviceDTO>> GetWaitingForPartsAsync(DateTime now)
+        // Aktif onarımlar (açık + beklemede) — her cihaz tek satır, en yeni gelişten eskiye.
+        private List<DashboardDeviceDTO> GetActiveRepairs(List<ActiveDevice> active, DateTime now)
         {
-            var raw = await _db.RepairRecords
-                .Where(r => !r.IsDelivered && r.Status == RepairStatus.Waiting)
-                .OrderByDescending(r => r.ReceivedAt)
+            return active
+                .OrderByDescending(a => a.WaitingSince)
                 .Take(5)
-                .Select(r => new
-                {
-                    Id = r.DeviceId,
-                    r.Device.CustomerId,
-                    CustomerName = r.Device.Customer.FirstName + " " + r.Device.Customer.LastName,
-                    Phone = r.Device.Customer.Phone1,
-                    r.Device.Brand,
-                    r.Device.Model,
-                    DeviceTypeInt = (int)r.Device.DeviceType,
-                    r.Device.CreatedAt,
-                    WaitingSince = (DateTime?)r.ReceivedAt
-                })
-                .ToListAsync();
+                .Select(a => MapActiveDevice(a, now))
+                .ToList();
+        }
 
-            return raw.Select(d => new DashboardDeviceDTO
+        private static DashboardDeviceDTO MapActiveDevice(ActiveDevice a, DateTime now)
+        {
+            var d = a.Device;
+            return new DashboardDeviceDTO
             {
                 CustomerId = d.CustomerId,
-                CustomerName = d.CustomerName,
-                Phone = d.Phone,
+                CustomerName = d.Customer.FirstName + " " + d.Customer.LastName,
+                Phone = d.Customer.Phone1,
                 DeviceId = d.Id,
                 Brand = d.Brand,
                 Model = d.Model,
-                DeviceType = DeviceTypeLabel(d.DeviceTypeInt),
-                WaitingSince = d.WaitingSince,
-                WaitingDays = d.WaitingSince.HasValue ? (int)(now - d.WaitingSince.Value).TotalDays : 0,
+                DeviceType = DeviceTypeLabel((int)d.DeviceType),
+                WaitingSince = a.WaitingSince,
+                WaitingDays = (int)(now - a.WaitingSince).TotalDays,
                 CreatedAt = d.CreatedAt
-            }).ToList();
+            };
         }
+
+        // Açık (teslim edilmemiş, güncel durumu Beklemede) bir cihaz ve bu gelişin başlangıç tarihi.
+        private sealed record ActiveDevice(Models.Device Device, DateTime WaitingSince);
 
         private async Task<string> GetCurrentUserBranchAsync()
         {
