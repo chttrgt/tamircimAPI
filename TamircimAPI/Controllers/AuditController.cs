@@ -114,5 +114,17 @@ namespace TamircimAPI.Controllers
             await _db.SaveChangesAsync();
             return NoContent();
         }
+
+        [HttpDelete]
+        public async Task<IActionResult> DeleteByAction([FromQuery] string? action)
+        {
+            var query = _db.AuditLogs.AsQueryable();
+            if (!string.IsNullOrWhiteSpace(action))
+                query = query.Where(a => a.Action == action);
+            var logs = await query.ToListAsync();
+            _db.AuditLogs.RemoveRange(logs);
+            await _db.SaveChangesAsync();
+            return NoContent();
+        }
     }
 }
