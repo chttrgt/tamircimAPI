@@ -104,5 +104,15 @@ namespace TamircimAPI.Controllers
 
             return Ok(new { items, total, hasMore = page * pageSize < total });
         }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var log = await _db.AuditLogs.FirstOrDefaultAsync(a => a.Id == id);
+            if (log == null) return NotFound();
+            _db.AuditLogs.Remove(log);
+            await _db.SaveChangesAsync();
+            return NoContent();
+        }
     }
 }
