@@ -5,7 +5,8 @@ namespace TamircimAPI.Services.Device
 {
     public interface IDeviceQueryService
     {
-        Task<IEnumerable<DeviceListDTO>> GetAllAsync(int? customerId = null, string? search = null);
+        // filter: null/"" → tümü, "active" → açık + Beklemede, "overdue" → açık + 7 günü geçmiş (durum fark etmez)
+        Task<IEnumerable<DeviceListDTO>> GetAllAsync(int? customerId = null, string? search = null, string? filter = null);
         Task<DeviceDTO?> GetByIdAsync(int id);
 
         // Cihaz koduna (DeviceCode) göre birebir cihaz bulur — barkod okutma için.

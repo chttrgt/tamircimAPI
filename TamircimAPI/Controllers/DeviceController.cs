@@ -21,9 +21,9 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] int? customerId = null, [FromQuery] string? search = null)
+        public async Task<IActionResult> GetAll([FromQuery] int? customerId = null, [FromQuery] string? search = null, [FromQuery] string? filter = null)
         {
-            var result = await _query.GetAllAsync(customerId, search);
+            var result = await _query.GetAllAsync(customerId, search, filter);
             return Ok(result);
         }
 

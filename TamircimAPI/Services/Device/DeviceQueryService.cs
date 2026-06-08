@@ -15,7 +15,7 @@ namespace TamircimAPI.Services.Device
             _db = db;
         }
 
-        public async Task<IEnumerable<DeviceListDTO>> GetAllAsync(int? customerId = null, string? search = null)
+        public async Task<IEnumerable<DeviceListDTO>> GetAllAsync(int? customerId = null, string? search = null, string? filter = null)
         {
             var query = _db.Devices.Include(d => d.Customer).Include(d => d.RepairRecords).AsQueryable();
 
@@ -36,7 +36,42 @@ namespace TamircimAPI.Services.Device
                 .OrderByDescending(d => d.CreatedAt)
                 .ToListAsync();
 
+            // Açık iş filtreleri — Dashboard ile aynı "güncel durum = en son kayıt" mantığı.
+            if (filter == "active")
+            {
+                // Aktif onarım = açık (en son kayıt teslim edilmemiş) + güncel durumu Beklemede.
+                devices = devices
+                    .Select(d => (Device: d, Visit: OpenVisit(d)))
+                    .Where(x => x.Visit is { } v && v.status == RepairStatus.Waiting)
+                    .OrderByDescending(x => x.Visit!.Value.openSince)
+                    .Select(x => x.Device)
+                    .ToList();
+            }
+            else if (filter == "overdue")
+            {
+                // Gecikmiş = açık (durum fark etmez) + bu gelişin başlangıcı 7 günden eski.
+                var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
+                devices = devices
+                    .Select(d => (Device: d, Visit: OpenVisit(d)))
+                    .Where(x => x.Visit is { } v && v.openSince < sevenDaysAgo)
+                    .OrderBy(x => x.Visit!.Value.openSince)
+                    .Select(x => x.Device)
+                    .ToList();
+            }
+
             return devices.Select(MapToListDTO);
+        }
+
+        // Cihazın AÇIK ziyaret bilgisi: en son kayıt teslim edilmemişse o ziyaretin başlangıç
+        // tarihi (son teslimden sonraki ilk kayıt) ve güncel durum. Kapalıysa null.
+        private static (DateTime openSince, RepairStatus status)? OpenVisit(Models.Device d)
+        {
+            var ordered = d.RepairRecords.OrderBy(r => r.ReceivedAt).ToList();
+            if (ordered.Count == 0) return null;
+            var latest = ordered[^1];
+            if (latest.IsDelivered) return null;
+            var lastDeliveredIdx = ordered.FindLastIndex(r => r.IsDelivered);
+            return (ordered[lastDeliveredIdx + 1].ReceivedAt, latest.Status);
         }
 
         public async Task<DeviceDTO?> GetByIdAsync(int id)
