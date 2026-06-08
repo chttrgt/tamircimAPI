@@ -35,7 +35,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpPost]
-        [HasPermission(Permissions.PhotosManage)]
+        [HasPermission(Permissions.PhotosCreate)]
         [EnableRateLimiting("profile")]
         [RequestSizeLimit(MaxUploadBytes)]
         public async Task<IActionResult> Upload(
@@ -71,7 +71,7 @@ namespace TamircimAPI.Controllers
         }
 
         [HttpDelete("{photoId:int}")]
-        [HasPermission(Permissions.PhotosManage)]
+        [HasPermission(Permissions.PhotosDelete)]
         public async Task<IActionResult> Delete(int deviceId, int photoId)
         {
             await _service.DeleteAsync(deviceId, photoId);
@@ -80,7 +80,7 @@ namespace TamircimAPI.Controllers
 
         // Toplu silme — DELETE gövdesi bazı ara katmanlarda düşürüldüğünden POST.
         [HttpPost("bulk-delete")]
-        [HasPermission(Permissions.PhotosManage)]
+        [HasPermission(Permissions.PhotosDelete)]
         public async Task<IActionResult> BulkDelete(int deviceId, [FromBody] BulkDeletePhotosDTO body)
         {
             if (body?.Ids == null || body.Ids.Count == 0)

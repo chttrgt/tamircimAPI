@@ -16,7 +16,8 @@ namespace TamircimAPI.Authorization
         public const string RepairsEdit     = "repairs.edit";
         public const string RepairsDelete   = "repairs.delete";
 
-        public const string PhotosManage    = "photos.manage";
+        public const string PhotosCreate     = "photos.create";
+        public const string PhotosDelete     = "photos.delete";
 
         // Çalışana atanabilir tüm izinler. Personel servisi gelen izinleri buna göre doğrular
         // (geçersiz/uydurma izin string'i kaydedilemez).
@@ -25,7 +26,7 @@ namespace TamircimAPI.Authorization
             CustomersCreate, CustomersEdit, CustomersDelete,
             DevicesCreate,   DevicesEdit,   DevicesDelete,
             RepairsCreate,   RepairsEdit,   RepairsDelete,
-            PhotosManage,
+            PhotosCreate,    PhotosDelete,
         };
 
         public static bool IsValid(string permission) => AllAssignable.Contains(permission);
