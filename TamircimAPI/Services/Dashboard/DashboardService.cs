@@ -29,7 +29,7 @@ namespace TamircimAPI.Services.Dashboard
             var active = GetActiveWaitingDevices(devices);
 
             var stats = await GetStatsAsync(active, now);
-            var recentCustomers = await GetRecentRecordsAsync();
+            var recentCustomers = GetRecentCustomers(devices);
             var overdueDevices = GetOverdueDevices(active, now);
             var waitingForParts = GetActiveRepairs(active, now);
 
@@ -82,37 +82,29 @@ namespace TamircimAPI.Services.Dashboard
             };
         }
 
-        // Son Kayıtlar = en son GELİŞLER (RepairRecord), ReceivedAt'e göre. Her geliş bir satır;
-        // aynı cihaz teslim sonrası n. kez geldiyse her gelişi kendi tarihiyle ayrı görünür.
-        private async Task<List<DashboardDeviceDTO>> GetRecentRecordsAsync()
+        // Son Kayıtlar = MÜŞTERİ başına tek satır, müşterinin EN SON gelişine (RepairRecord) göre.
+        // Aynı müşteri başka cihaz ya da aynı cihazı n. kez getirse de tek satır; en son geliş
+        // tarihiyle ve o gelişteki cihazla görünür. Kart müşteri detayına gider.
+        private static List<DashboardDeviceDTO> GetRecentCustomers(List<Models.Device> devices)
         {
-            var raw = await _db.RepairRecords
-                .OrderByDescending(r => r.ReceivedAt)
+            return devices
+                .SelectMany(d => d.RepairRecords.Select(r => new { Device = d, Record = r }))
+                .GroupBy(x => x.Device.CustomerId)
+                .Select(g => g.OrderByDescending(x => x.Record.ReceivedAt).First())  // müşterinin en son gelişi
+                .OrderByDescending(x => x.Record.ReceivedAt)                          // en son gelen müşteri üstte
                 .Take(5)
-                .Select(r => new
+                .Select(x => new DashboardDeviceDTO
                 {
-                    r.Device.CustomerId,
-                    CustomerName = r.Device.Customer.FirstName + " " + r.Device.Customer.LastName,
-                    Phone = r.Device.Customer.Phone1,
-                    r.DeviceId,
-                    r.Device.Brand,
-                    r.Device.Model,
-                    DeviceTypeInt = (int)r.Device.DeviceType,
-                    r.ReceivedAt
+                    CustomerId = x.Device.CustomerId,
+                    CustomerName = x.Device.Customer.FirstName + " " + x.Device.Customer.LastName,
+                    Phone = x.Device.Customer.Phone1,
+                    DeviceId = x.Device.Id,
+                    Brand = x.Device.Brand,
+                    Model = x.Device.Model,
+                    DeviceType = DeviceTypeLabel((int)x.Device.DeviceType),
+                    CreatedAt = x.Record.ReceivedAt   // kartta gösterilen tarih = en son gelişin tarihi
                 })
-                .ToListAsync();
-
-            return raw.Select(x => new DashboardDeviceDTO
-            {
-                CustomerId = x.CustomerId,
-                CustomerName = x.CustomerName,
-                Phone = x.Phone,
-                DeviceId = x.DeviceId,
-                Brand = x.Brand,
-                Model = x.Model,
-                DeviceType = DeviceTypeLabel(x.DeviceTypeInt),
-                CreatedAt = x.ReceivedAt   // kartta gösterilen tarih = gelişin tarihi
-            }).ToList();
+                .ToList();
         }
 
         // En uzun süredir bekleyen (7+ gün) açık işler — her cihaz tek satır.
