@@ -60,7 +60,7 @@ namespace TamircimAPI.Services.Dashboard
                 // (hiç teslim yoksa cihazın ilk kaydı). n. gelişte eski ziyaretin tarihi alınmaz.
                 var lastDeliveredIdx = ordered.FindLastIndex(r => r.IsDelivered);
                 var intake = ordered[lastDeliveredIdx + 1];
-                result.Add(new ActiveDevice(d, intake.ReceivedAt));
+                result.Add(new ActiveDevice(d, intake.ReceivedAt, latest.Status));
             }
             return result;
         }
@@ -76,8 +76,9 @@ namespace TamircimAPI.Services.Dashboard
             {
                 TotalCustomers = totalCustomers,
                 TotalDevices = totalDevices,
-                // Kayıt değil CİHAZ sayılır → aynı cihaz birden çok Waiting kaydıyla şişmez.
-                TotalWaiting = active.Count,
+                // Aktif Onarım = ÜZERİNDE ÇALIŞILAN iş → yalnızca güncel durumu Beklemede olanlar.
+                TotalWaiting = active.Count(a => a.Status == RepairStatus.Waiting),
+                // Gecikmiş = teslim edilmemiş TÜM açık işler (durum fark etmez) 7 günü geçmişse.
                 TotalOverdue = active.Count(a => a.WaitingSince < sevenDaysAgo)
             };
         }
@@ -119,10 +120,13 @@ namespace TamircimAPI.Services.Dashboard
                 .ToList();
         }
 
-        // Aktif onarımlar (açık + beklemede) — her cihaz tek satır, en yeni gelişten eskiye.
+        // Aktif onarımlar = ÜZERİNDE ÇALIŞILAN işler → yalnızca güncel durumu Beklemede olanlar
+        // (Onarıldı/Onarılmadı ama teslim edilmemiş cihazlar buraya GİRMEZ; gerekiyorsa +7 Gün'de
+        // görünürler). Her cihaz tek satır, en yeni gelişten eskiye, ilk 5.
         private List<DashboardDeviceDTO> GetActiveRepairs(List<ActiveDevice> active, DateTime now)
         {
             return active
+                .Where(a => a.Status == RepairStatus.Waiting)
                 .OrderByDescending(a => a.WaitingSince)
                 .Take(5)
                 .Select(a => MapActiveDevice(a, now))
@@ -147,8 +151,8 @@ namespace TamircimAPI.Services.Dashboard
             };
         }
 
-        // Açık (teslim edilmemiş, güncel durumu Beklemede) bir cihaz ve bu gelişin başlangıç tarihi.
-        private sealed record ActiveDevice(Models.Device Device, DateTime WaitingSince);
+        // Açık (teslim edilmemiş) bir cihaz: bu gelişin başlangıç tarihi ve güncel durumu (en son kayıt).
+        private sealed record ActiveDevice(Models.Device Device, DateTime WaitingSince, RepairStatus Status);
 
         private static string DeviceTypeLabel(int value) => value switch
         {
