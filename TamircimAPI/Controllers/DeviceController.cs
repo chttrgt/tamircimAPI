@@ -27,6 +27,18 @@ namespace TamircimAPI.Controllers
             return Ok(result);
         }
 
+        [HttpGet("paged")]
+        public async Task<IActionResult> GetPaged(
+            [FromQuery] int? customerId = null,
+            [FromQuery] string? search = null,
+            [FromQuery] string? filter = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 30)
+        {
+            var result = await _query.GetPagedAsync(customerId, search, filter, page, pageSize);
+            return Ok(result);
+        }
+
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {

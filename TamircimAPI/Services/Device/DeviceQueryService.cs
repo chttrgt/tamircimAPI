@@ -62,6 +62,49 @@ namespace TamircimAPI.Services.Device
             return devices.Select(MapToListDTO);
         }
 
+        public async Task<DevicePagedDTO> GetPagedAsync(int? customerId, string? search, string? filter, int page, int pageSize)
+        {
+            var query = _db.Devices.Include(d => d.Customer).Include(d => d.RepairRecords).AsQueryable();
+
+            if (customerId.HasValue)
+                query = query.Where(d => d.CustomerId == customerId.Value);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                query = query.Where(d =>
+                    d.DeviceCode.Contains(term) ||
+                    d.Brand.Contains(term) ||
+                    d.Model.Contains(term) ||
+                    (d.SerialNumber != null && d.SerialNumber.Contains(term)));
+            }
+
+            var devices = await query.OrderByDescending(d => d.CreatedAt).ToListAsync();
+
+            if (filter == "active")
+            {
+                devices = devices
+                    .Select(d => (Device: d, Visit: OpenVisit(d)))
+                    .Where(x => x.Visit is { } v && v.status == RepairStatus.Waiting)
+                    .OrderByDescending(x => x.Visit!.Value.openSince)
+                    .Select(x => x.Device).ToList();
+            }
+            else if (filter == "overdue")
+            {
+                var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
+                devices = devices
+                    .Select(d => (Device: d, Visit: OpenVisit(d)))
+                    .Where(x => x.Visit is { } v && v.openSince < sevenDaysAgo)
+                    .OrderBy(x => x.Visit!.Value.openSince)
+                    .Select(x => x.Device).ToList();
+            }
+
+            var total = devices.Count;
+            var items = devices.Skip((page - 1) * pageSize).Take(pageSize).Select(MapToListDTO).ToList();
+
+            return new DevicePagedDTO { Items = items, HasMore = page * pageSize < total };
+        }
+
         // Cihazın AÇIK ziyaret bilgisi: en son kayıt teslim edilmemişse o ziyaretin başlangıç
         // tarihi (son teslimden sonraki ilk kayıt) ve güncel durum. Kapalıysa null.
         private static (DateTime openSince, RepairStatus status)? OpenVisit(Models.Device d)
