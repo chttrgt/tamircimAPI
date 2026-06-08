@@ -8,20 +8,15 @@ namespace TamircimAPI.Services.Dashboard
     public class DashboardService : IDashboardService
     {
         private readonly ApplicationDbContext _db;
-        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public DashboardService(ApplicationDbContext db, IHttpContextAccessor httpContextAccessor)
+        public DashboardService(ApplicationDbContext db)
         {
             _db = db;
-            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<DashboardResponseDTO> GetDashboardAsync()
         {
             var now = DateTime.UtcNow;
-
-            // Cihazı olmayan müşterilerde varsayılan tür, giriş yapan kullanıcının branşı olsun.
-            var defaultDeviceType = await GetCurrentUserBranchAsync();
 
             // Cihazın GÜNCEL durumu = EN SON servis kaydı (DeviceQueryService ile aynı mantık).
             // Aktif/bekleyen iş = en son kaydı teslim edilmemiş ve "Beklemede" olan CİHAZ.
@@ -34,7 +29,7 @@ namespace TamircimAPI.Services.Dashboard
             var active = GetActiveWaitingDevices(devices);
 
             var stats = await GetStatsAsync(active, now);
-            var recentCustomers = await GetRecentCustomersAsync(defaultDeviceType);
+            var recentCustomers = await GetRecentRecordsAsync();
             var overdueDevices = GetOverdueDevices(active, now);
             var waitingForParts = GetActiveRepairs(active, now);
 
@@ -87,34 +82,36 @@ namespace TamircimAPI.Services.Dashboard
             };
         }
 
-        private async Task<List<DashboardDeviceDTO>> GetRecentCustomersAsync(string defaultDeviceType)
+        // Son Kayıtlar = en son GELİŞLER (RepairRecord), ReceivedAt'e göre. Her geliş bir satır;
+        // aynı cihaz teslim sonrası n. kez geldiyse her gelişi kendi tarihiyle ayrı görünür.
+        private async Task<List<DashboardDeviceDTO>> GetRecentRecordsAsync()
         {
-            var raw = await _db.Customers
-                .OrderByDescending(c => c.CreatedAt)
+            var raw = await _db.RepairRecords
+                .OrderByDescending(r => r.ReceivedAt)
                 .Take(5)
-                .Select(c => new
+                .Select(r => new
                 {
-                    c.Id,
-                    CustomerName = c.FirstName + " " + c.LastName,
-                    c.Phone1,
-                    DeviceId = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => (int?)d.Id).FirstOrDefault(),
-                    Brand = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => d.Brand).FirstOrDefault() ?? "-",
-                    Model = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => d.Model).FirstOrDefault() ?? "-",
-                    DeviceTypeInt = c.Devices.OrderByDescending(d => d.CreatedAt).Select(d => (int?)d.DeviceType).FirstOrDefault(),
-                    c.CreatedAt
+                    r.Device.CustomerId,
+                    CustomerName = r.Device.Customer.FirstName + " " + r.Device.Customer.LastName,
+                    Phone = r.Device.Customer.Phone1,
+                    r.DeviceId,
+                    r.Device.Brand,
+                    r.Device.Model,
+                    DeviceTypeInt = (int)r.Device.DeviceType,
+                    r.ReceivedAt
                 })
                 .ToListAsync();
 
             return raw.Select(x => new DashboardDeviceDTO
             {
-                CustomerId = x.Id,
+                CustomerId = x.CustomerId,
                 CustomerName = x.CustomerName,
-                Phone = x.Phone1,
-                DeviceId = x.DeviceId ?? 0,
+                Phone = x.Phone,
+                DeviceId = x.DeviceId,
                 Brand = x.Brand,
                 Model = x.Model,
-                DeviceType = x.DeviceTypeInt.HasValue ? DeviceTypeLabel(x.DeviceTypeInt.Value) : defaultDeviceType,
-                CreatedAt = x.CreatedAt
+                DeviceType = DeviceTypeLabel(x.DeviceTypeInt),
+                CreatedAt = x.ReceivedAt   // kartta gösterilen tarih = gelişin tarihi
             }).ToList();
         }
 
@@ -160,21 +157,6 @@ namespace TamircimAPI.Services.Dashboard
 
         // Açık (teslim edilmemiş, güncel durumu Beklemede) bir cihaz ve bu gelişin başlangıç tarihi.
         private sealed record ActiveDevice(Models.Device Device, DateTime WaitingSince);
-
-        private async Task<string> GetCurrentUserBranchAsync()
-        {
-            var userIdStr = _httpContextAccessor.HttpContext?.Items["UserId"] as string;
-            if (!int.TryParse(userIdStr, out var userId))
-                return "Diğer";
-
-            // Branch artık tenant düzeyinde. Kullanıcı mevcut tenant'ta (filtre uygular).
-            var branch = await _db.Users
-                .Where(u => u.Id == userId)
-                .Select(u => u.Tenant.Branch)
-                .FirstOrDefaultAsync();
-
-            return string.IsNullOrWhiteSpace(branch) ? "Diğer" : branch;
-        }
 
         private static string DeviceTypeLabel(int value) => value switch
         {
