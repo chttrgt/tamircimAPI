@@ -28,3 +28,6 @@ postgres_data/
 # Yüklenen cihaz fotoğrafları (kullanıcı verisi)
 uploads/
 TamircimAPI/uploads/
+
+# Veritabanı yedekleri (kullanıcı verisi — repoya girmemeli)
+backups/
