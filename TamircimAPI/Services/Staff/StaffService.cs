@@ -113,6 +113,32 @@ namespace TamircimAPI.Services.Staff
             return MapToDto(user);
         }
 
+        // Personel "silme" = pasifleştirme (soft delete). Kullanıcı fiziksel olarak
+        // silinmez; geçmişte oluşturduğu iş emri/audit kayıtları korunur. Yalnızca
+        // IsActive=false yapılır ve aktif oturumları kapatılır → bir daha giriş yapamaz.
+        public async Task DeleteAsync(int id)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id)
+                ?? throw new KeyNotFoundException($"Kullanıcı bulunamadı: {id}");
+
+            if (user.Role == UserRole.Owner)
+                throw new BusinessRuleException("Sahip hesabı silinemez.", "OWNER_NOT_DELETABLE");
+
+            user.IsActive = false;
+
+            // Aktif oturumları iptal et → pasifleştirilen çalışan erişimini kaybetsin.
+            var activeTokens = await _db.RefreshTokens
+                .Where(t => t.UserId == id && t.RevokedAt == null)
+                .ToListAsync();
+            foreach (var rt in activeTokens)
+            {
+                rt.RevokedAt = DateTime.UtcNow;
+                rt.RevokeReason = "Staff deactivated by owner";
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
         public async Task ResetPasswordAsync(int id, string tempPassword)
         {
             var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id)

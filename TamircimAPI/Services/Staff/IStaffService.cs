@@ -7,6 +7,7 @@ namespace TamircimAPI.Services.Staff
         Task<StaffPagedDTO> GetPagedAsync(int page, int pageSize);
         Task<StaffListDTO> CreateAsync(CreateStaffDTO dto);
         Task<StaffListDTO> UpdateAsync(int id, UpdateStaffDTO dto, int actingUserId);
+        Task DeleteAsync(int id);
         Task ResetPasswordAsync(int id, string tempPassword);
     }
 }

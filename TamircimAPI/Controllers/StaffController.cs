@@ -37,6 +37,14 @@ namespace TamircimAPI.Controllers
         public async Task<IActionResult> Update(int id, [FromBody] UpdateStaffDTO dto)
             => Ok(await _staff.UpdateAsync(id, dto, GetUserId()));
 
+        // Pasifleştirme (soft delete): kullanıcı silinmez, IsActive=false yapılır.
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _staff.DeleteAsync(id);
+            return NoContent();
+        }
+
         [HttpPost("{id:int}/reset-password")]
         public async Task<IActionResult> ResetPassword(int id, [FromBody] ResetStaffPasswordDTO dto)
         {
