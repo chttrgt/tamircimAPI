@@ -52,7 +52,8 @@ namespace TamircimAPI.Services.Staff
             var perms = ValidatePermissions(dto.Permissions);
 
             // E-posta global benzersiz → tüm sistemde kontrol (tenant filtresini bypass et).
-            if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email))
+            // Soft-deleted personel hariç → silinen çalışanın e-postasıyla yeniden işe alınabilir.
+            if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email && !u.IsDeleted))
                 throw new BusinessRuleException("Bu e-posta adresi zaten kayıtlı.", "EMAIL_ALREADY_EXISTS");
 
             // Branch artık tenant düzeyinde (cihaz tipi türetimi için); personele
@@ -113,9 +114,11 @@ namespace TamircimAPI.Services.Staff
             return MapToDto(user);
         }
 
-        // Personel "silme" = pasifleştirme (soft delete). Kullanıcı fiziksel olarak
-        // silinmez; geçmişte oluşturduğu iş emri/audit kayıtları korunur. Yalnızca
-        // IsActive=false yapılır ve aktif oturumları kapatılır → bir daha giriş yapamaz.
+        // Personel "silme" = soft delete. Kullanıcı fiziksel silinmez; geçmişte
+        // oluşturduğu iş emri/audit kayıtları korunur. IsDeleted=true ile global query
+        // filter'dan elenir (listeden kaybolur, müşteri silme gibi), IsActive=false ve
+        // oturum iptali ile de bir daha giriş yapamaz. DeletedAt/DeletedByUserId
+        // damgaları SaveChanges içinde otomatik atanır.
         public async Task DeleteAsync(int id)
         {
             var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id)
@@ -124,16 +127,17 @@ namespace TamircimAPI.Services.Staff
             if (user.Role == UserRole.Owner)
                 throw new BusinessRuleException("Sahip hesabı silinemez.", "OWNER_NOT_DELETABLE");
 
+            user.IsDeleted = true;
             user.IsActive = false;
 
-            // Aktif oturumları iptal et → pasifleştirilen çalışan erişimini kaybetsin.
+            // Aktif oturumları iptal et → silinen çalışan erişimini kaybetsin.
             var activeTokens = await _db.RefreshTokens
                 .Where(t => t.UserId == id && t.RevokedAt == null)
                 .ToListAsync();
             foreach (var rt in activeTokens)
             {
                 rt.RevokedAt = DateTime.UtcNow;
-                rt.RevokeReason = "Staff deactivated by owner";
+                rt.RevokeReason = "Staff deleted by owner";
             }
 
             await _db.SaveChangesAsync();

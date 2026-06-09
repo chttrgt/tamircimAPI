@@ -393,7 +393,8 @@ namespace TamircimAPI.Data
                 entity.HasKey(e => e.Id);
                 // E-posta GLOBAL benzersiz kalır: login e-posta → kullanıcı → tenant
                 // ile çalışır, tenant seçicisi gerekmez. Bir e-posta tek tenant'a aittir.
-                entity.HasIndex(e => e.Email).IsUnique();
+                // Soft-deleted personel hariç → silinen çalışanın e-postası yeniden kullanılabilir.
+                entity.HasIndex(e => e.Email).IsUnique().HasFilter("\"IsDeleted\" = false");
                 entity.HasIndex(e => e.TenantId);
                 entity.Property(e => e.FirstName).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.LastName).IsRequired().HasMaxLength(100);
@@ -409,9 +410,10 @@ namespace TamircimAPI.Data
                     .HasForeignKey(e => e.TenantId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                // Tenant izolasyonu (1. katman). StaffService vb. otomatik tenant-scope'lu;
-                // login/refresh global arama için IgnoreQueryFilters() kullanır.
-                entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+                // Tenant izolasyonu (1. katman) + soft-delete elemesi. StaffService vb.
+                // otomatik tenant-scope'lu ve silinen personeli görmez; login/refresh
+                // global arama için IgnoreQueryFilters() kullanır (orada IsActive ile engellenir).
+                entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
             });
             #endregion
 

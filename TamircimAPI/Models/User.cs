@@ -3,7 +3,7 @@ using TamircimAPI.Models.Interfaces;
 
 namespace TamircimAPI.Models
 {
-    public class User : ITenantOwned
+    public class User : ITenantOwned, ISoftDeletable
     {
         public int Id { get; set; }
 
@@ -29,6 +29,13 @@ namespace TamircimAPI.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        // ISoftDeletable — personel "silme" = soft delete. Kullanıcı fiziksel silinmez
+        // (oluşturduğu iş emri/audit kayıtları korunur) ama listeden ve sorgulardan
+        // global query filter ile elenir → müşteri silme gibi görünür.
+        public bool IsDeleted { get; set; } = false;
+        public DateTime? DeletedAt { get; set; }
+        public int? DeletedByUserId { get; set; }
 
         public string FullName => $"{FirstName} {LastName}";
 
