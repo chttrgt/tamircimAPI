@@ -28,6 +28,12 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- Migration'ı bu rol çalıştıracak → public şemasını ona ver (tabloları o oluşturup sahiplenir).
     ALTER SCHEMA public OWNER TO tamircim_app;
     GRANT CREATE, USAGE ON SCHEMA public TO tamircim_app;
+
+    -- Arama performansı için trigram extension'ı (gin_trgm_ops → LIKE '%...%' indexlenir).
+    -- Extension oluşturmayı yalnızca superuser/DB-owner yapabilir; uygulama rolünün
+    -- (tamircim_app) DB-seviyesi CREATE yetkisi yok. Bu yüzden burada (init, superuser)
+    -- oluşturulur. Migration trigram indexlerini yalnızca bu extension VARSA ekler.
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
 EOSQL
 
 echo "tamircim_app uygulama rolü oluşturuldu (NOSUPERUSER, NOBYPASSRLS)."

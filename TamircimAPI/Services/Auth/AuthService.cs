@@ -19,6 +19,12 @@ namespace TamircimAPI.Services.Auth
         private readonly IEmailSender _emailSender;
         private readonly ICaptchaVerifier _captcha;
 
+        // Login zamanlama yan-kanalını kapatır: kullanıcı bulunamadığında da sabit bir
+        // BCrypt doğrulaması çalıştırılır → "bu e-posta kayıtlı mı" yanıt süresi farkından
+        // sızdırılamaz. Tür ilk yüklenirken bir kez hesaplanır.
+        private static readonly string DummyPasswordHash =
+            BCrypt.Net.BCrypt.HashPassword("timing-equalizer", BCrypt.Net.BCrypt.GenerateSalt(12));
+
         public AuthService(
             ApplicationDbContext db,
             ITokenService tokenService,
@@ -108,7 +114,7 @@ namespace TamircimAPI.Services.Auth
                 _db.EmailVerificationTokens.Add(new EmailVerificationToken
                 {
                     UserId = user.Id,
-                    Token = verificationToken,
+                    Token = _tokenService.HashToken(verificationToken), // DB'de hash; düz metin e-postada
                     ExpiresAt = DateTime.UtcNow.AddHours(24),
                 });
                 await _db.SaveChangesAsync();
@@ -131,10 +137,12 @@ namespace TamircimAPI.Services.Auth
 
             // EmailVerificationToken'ın tenant filtresi yok; User filtreli olduğundan
             // (bağlam=0) IgnoreQueryFilters ile yükle.
+            // Gelen düz metin token'ın hash'ini hesaplayıp DB'deki hash ile eşleştir.
+            var tokenHash = _tokenService.HashToken(token);
             var vt = await _db.EmailVerificationTokens
                 .IgnoreQueryFilters()
                 .Include(t => t.User)
-                .FirstOrDefaultAsync(t => t.Token == token);
+                .FirstOrDefaultAsync(t => t.Token == tokenHash);
 
             if (vt == null || !vt.IsValid) return false;
 
@@ -182,7 +190,7 @@ namespace TamircimAPI.Services.Auth
             _db.EmailVerificationTokens.Add(new EmailVerificationToken
             {
                 UserId = user.Id,
-                Token = newToken,
+                Token = _tokenService.HashToken(newToken), // DB'de hash; düz metin e-postada
                 ExpiresAt = DateTime.UtcNow.AddHours(24),
             });
             await _db.SaveChangesAsync();
@@ -201,7 +209,15 @@ namespace TamircimAPI.Services.Auth
                 .Include(u => u.Tenant)
                 .FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
 
-            if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+            // Zamanlama eşitleme: kullanıcı yoksa da bir BCrypt doğrulaması çalıştır
+            // (sabit hash) → "e-posta kayıtlı mı" yanıt süresinden anlaşılamaz.
+            if (user == null)
+            {
+                BCrypt.Net.BCrypt.Verify(dto.Password, DummyPasswordHash);
+                throw new UnauthorizedAccessException("E-posta veya şifre hatalı.");
+            }
+
+            if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
                 throw new UnauthorizedAccessException("E-posta veya şifre hatalı.");
 
             if (!user.Tenant.IsActive)
@@ -217,7 +233,7 @@ namespace TamircimAPI.Services.Auth
             {
                 TenantId = user.TenantId,
                 UserId = user.Id,
-                Token = refreshToken,
+                Token = _tokenService.HashToken(refreshToken), // DB'de hash; düz metin istemcide
                 ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
                 CreatedByIp = ipAddress
             });
@@ -229,28 +245,59 @@ namespace TamircimAPI.Services.Auth
         public async Task<LoginResponseDTO> RefreshTokenAsync(string refreshToken, string ipAddress)
         {
             // Refresh public akış: User tenant-filtreli olduğundan IgnoreQueryFilters şart.
+            // Gelen düz metin token'ın hash'i ile aranır (DB'de yalnızca hash saklanır).
+            var tokenHash = _tokenService.HashToken(refreshToken);
             var token = await _db.RefreshTokens
                 .IgnoreQueryFilters()
                 .Include(t => t.User)
                     .ThenInclude(u => u.Permissions)
-                .FirstOrDefaultAsync(t => t.Token == refreshToken);
+                .Include(t => t.User)
+                    .ThenInclude(u => u.Tenant)
+                .FirstOrDefaultAsync(t => t.Token == tokenHash);
 
-            if (token == null || !token.IsActive)
+            if (token == null)
                 throw new UnauthorizedAccessException("Geçersiz veya süresi dolmuş refresh token.");
+
+            // S5 — Yeniden-kullanım (theft) tespiti: zaten iptal edilmiş (rotasyona uğramış)
+            // bir token tekrar kullanılıyorsa çalınmış token sinyalidir → kullanıcının tüm
+            // aktif token ailesini iptal et (tüm oturumları kapat) ve reddet.
+            if (token.IsRevoked)
+            {
+                var family = await _db.RefreshTokens
+                    .IgnoreQueryFilters()
+                    .Where(t => t.UserId == token.UserId && t.RevokedAt == null)
+                    .ToListAsync();
+                foreach (var t in family)
+                {
+                    t.RevokedAt = DateTime.UtcNow;
+                    t.RevokedByIp = ipAddress;
+                    t.RevokeReason = "Reuse detected — family revoked";
+                }
+                await _db.SaveChangesAsync();
+                throw new UnauthorizedAccessException("Geçersiz veya süresi dolmuş refresh token.");
+            }
+
+            if (token.IsExpired)
+                throw new UnauthorizedAccessException("Geçersiz veya süresi dolmuş refresh token.");
+
+            // S4 — Hesap hâlâ aktif mi? Pasifleştirilmiş kullanıcı / doğrulanmamış tenant
+            // refresh ile erişimini sürdüremesin (defense-in-depth).
+            if (!token.User.IsActive || !token.User.Tenant.IsActive)
+                throw new UnauthorizedAccessException("Hesap erişimi devre dışı.");
 
             var newRefreshToken = _tokenService.GenerateRefreshToken();
             var expireDays = int.Parse(_configuration["Jwt:RefreshTokenExpireDays"] ?? "7");
 
             token.RevokedAt = DateTime.UtcNow;
             token.RevokedByIp = ipAddress;
-            token.ReplacedByToken = newRefreshToken;
+            token.ReplacedByToken = _tokenService.HashToken(newRefreshToken);
             token.RevokeReason = "Replaced by new token";
 
             _db.RefreshTokens.Add(new RefreshToken
             {
-                TenantId = token.UserId == 0 ? token.TenantId : token.User.TenantId,
+                TenantId = token.User.TenantId,
                 UserId = token.UserId,
-                Token = newRefreshToken,
+                Token = _tokenService.HashToken(newRefreshToken),
                 ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
                 CreatedByIp = ipAddress
             });
@@ -330,7 +377,7 @@ namespace TamircimAPI.Services.Auth
                 {
                     TenantId = user.TenantId,
                     UserId = user.Id,
-                    Token = newRefreshTokenValue,
+                    Token = _tokenService.HashToken(newRefreshTokenValue),
                     ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
                     CreatedByIp = ipAddress,
                 });
@@ -354,9 +401,10 @@ namespace TamircimAPI.Services.Auth
 
         public async Task RevokeTokenAsync(string refreshToken, string ipAddress)
         {
+            var tokenHash = _tokenService.HashToken(refreshToken);
             var token = await _db.RefreshTokens
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Token == refreshToken);
+                .FirstOrDefaultAsync(t => t.Token == tokenHash);
 
             if (token == null || !token.IsActive)
                 throw new KeyNotFoundException("Token bulunamadı veya zaten iptal edilmiş.");

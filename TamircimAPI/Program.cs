@@ -283,10 +283,39 @@ app.UseSerilogRequestLogging(options =>
     options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
 });
 
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+// X-Forwarded-* başlıklarına yalnızca GÜVENİLEN reverse proxy'den gelince güven.
+// Güvenilen ağ(lar) FORWARDED_KNOWN_NETWORKS (CIDR; ';' ayraçlı) ve/veya tekil
+// proxy IP'leri FORWARDED_KNOWN_PROXIES env'den okunur. Tanımsızsa varsayılan
+// (yalnızca loopback) korunur → X-Forwarded-For spoof edilip IP-bazlı rate limit
+// aşılamaz. Docker'da proxy farklı IP'de olduğundan üretimde bu env ayarlanmalı,
+// aksi halde istemci IP'si proxy IP'sine düşer (rate limit/log proxy IP'sine kayar).
+var forwardedOptions = new ForwardedHeadersOptions
 {
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-});
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 2,
+};
+var fwdNetworks = Environment.GetEnvironmentVariable("FORWARDED_KNOWN_NETWORKS");
+if (!string.IsNullOrWhiteSpace(fwdNetworks))
+{
+    foreach (var cidr in fwdNetworks.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        var parts = cidr.Split('/');
+        if (parts.Length == 2
+            && System.Net.IPAddress.TryParse(parts[0], out var prefix)
+            && int.TryParse(parts[1], out var prefixLen))
+        {
+            forwardedOptions.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, prefixLen));
+        }
+    }
+}
+var fwdProxies = Environment.GetEnvironmentVariable("FORWARDED_KNOWN_PROXIES");
+if (!string.IsNullOrWhiteSpace(fwdProxies))
+{
+    foreach (var ipStr in fwdProxies.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        if (System.Net.IPAddress.TryParse(ipStr, out var addr))
+            forwardedOptions.KnownProxies.Add(addr);
+}
+app.UseForwardedHeaders(forwardedOptions);
 
 app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");

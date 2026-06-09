@@ -113,17 +113,27 @@ namespace TamircimAPI.Services.Device
             return photos.Count;
         }
 
-        // Akışı belleğe alır + gerçekten resim mi diye magic-byte doğrular (JPEG/PNG).
+        // Önce yalnızca imza başlığını (8 byte) okuyup magic-byte doğrular (JPEG/PNG);
+        // geçersizse 15 MB'lık içeriği belleğe ALMADAN erkenden reddeder (DoS sertleştirme).
+        // Geçerliyse kalanı ekleyip byte[] döner (boyut RequestSizeLimit + 15 MB ile sınırlı).
         private static async Task<byte[]> ReadAndValidateAsync(Stream stream, CancellationToken ct)
         {
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms, ct);
-            var bytes = ms.ToArray();
+            var header = new byte[8];
+            var read = 0;
+            while (read < header.Length)
+            {
+                var n = await stream.ReadAsync(header.AsMemory(read), ct);
+                if (n == 0) break; // akış başlıktan kısa
+                read += n;
+            }
 
-            if (!IsJpeg(bytes) && !IsPng(bytes))
+            if (!IsJpeg(header) && !IsPng(header))
                 throw new ArgumentException("Geçersiz veya desteklenmeyen görsel dosyası.");
 
-            return bytes;
+            using var ms = new MemoryStream();
+            ms.Write(header, 0, read);        // okunan başlığı geri yaz
+            await stream.CopyToAsync(ms, ct); // kalanını ekle
+            return ms.ToArray();
         }
 
         private static bool IsJpeg(byte[] b) =>

@@ -64,7 +64,7 @@ namespace TamircimAPI.Services.Device
 
         public async Task<DevicePagedDTO> GetPagedAsync(int? customerId, string? search, string? filter, int page, int pageSize)
         {
-            var query = _db.Devices.Include(d => d.Customer).Include(d => d.RepairRecords).AsQueryable();
+            var query = _db.Devices.AsQueryable();
 
             if (customerId.HasValue)
                 query = query.Where(d => d.CustomerId == customerId.Value);
@@ -79,30 +79,109 @@ namespace TamircimAPI.Services.Device
                     (d.SerialNumber != null && d.SerialNumber.Contains(term)));
             }
 
-            var devices = await query.OrderByDescending(d => d.CreatedAt).ToListAsync();
-
-            if (filter == "active")
+            // Açık iş filtreleri (aktif/gecikmiş): "güncel durum = en son kayıt" mantığı
+            // C#'ta hesaplandığından, önce SQL'de YALNIZCA açık cihazlara (en son kaydı
+            // teslim EDİLMEMİŞ) indiriyoruz → tüm tablo değil, küçük açık-iş kümesi yüklenir.
+            // Ziyaret/sıralama mantığı (OpenVisit) bu küçük kümede aynen uygulanır.
+            if (filter == "active" || filter == "overdue")
             {
-                devices = devices
+                var openDevices = await query
+                    .Where(d => d.RepairRecords.Any()
+                        && d.RepairRecords.OrderByDescending(r => r.ReceivedAt)
+                               .Select(r => r.IsDelivered).FirstOrDefault() == false)
+                    .Include(d => d.Customer)
+                    .Include(d => d.RepairRecords)
+                    .ToListAsync();
+
+                var withVisit = openDevices
                     .Select(d => (Device: d, Visit: OpenVisit(d)))
-                    .Where(x => x.Visit is { } v && v.status == RepairStatus.Waiting)
-                    .OrderByDescending(x => x.Visit!.Value.openSince)
-                    .Select(x => x.Device).ToList();
-            }
-            else if (filter == "overdue")
-            {
-                var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
-                devices = devices
-                    .Select(d => (Device: d, Visit: OpenVisit(d)))
-                    .Where(x => x.Visit is { } v && v.openSince < sevenDaysAgo)
-                    .OrderBy(x => x.Visit!.Value.openSince)
-                    .Select(x => x.Device).ToList();
+                    .Where(x => x.Visit.HasValue)
+                    .Select(x => (x.Device, Visit: x.Visit!.Value));
+
+                if (filter == "active")
+                    withVisit = withVisit
+                        .Where(x => x.Visit.status == RepairStatus.Waiting)
+                        .OrderByDescending(x => x.Visit.openSince);
+                else
+                {
+                    var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
+                    withVisit = withVisit
+                        .Where(x => x.Visit.openSince < sevenDaysAgo)
+                        .OrderBy(x => x.Visit.openSince);
+                }
+
+                var matched = withVisit.Select(x => x.Device).ToList();
+                var totalOpen = matched.Count;
+                var pagedItems = matched.Skip((page - 1) * pageSize).Take(pageSize).Select(MapToListDTO).ToList();
+                return new DevicePagedDTO { Items = pagedItems, HasMore = page * pageSize < totalOpen };
             }
 
-            var total = devices.Count;
-            var items = devices.Skip((page - 1) * pageSize).Take(pageSize).Select(MapToListDTO).ToList();
+            // "Tüm cihazlar": sayfalama + projeksiyon tamamen DB seviyesinde — yalnızca
+            // pageSize kadar satır döner (etiketler materialize sonrası C#'ta eklenir).
+            var total = await query.CountAsync();
+
+            var rows = await query
+                .OrderByDescending(d => d.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(d => new DeviceListRow
+                {
+                    Id = d.Id,
+                    CustomerId = d.CustomerId,
+                    CustomerFullName = d.Customer.FirstName + " " + d.Customer.LastName,
+                    DeviceCode = d.DeviceCode,
+                    DeviceName = d.DeviceName,
+                    Brand = d.Brand,
+                    Model = d.Model,
+                    SerialNumber = d.SerialNumber,
+                    DeviceType = d.DeviceType,
+                    RepairCount = d.RepairRecords.Count(),
+                    LastReceivedAt = d.RepairRecords.Max(r => (DateTime?)r.ReceivedAt),
+                    LatestStatus = d.RepairRecords
+                        .OrderByDescending(r => r.ReceivedAt)
+                        .Select(r => (RepairStatus?)r.Status)
+                        .FirstOrDefault(),
+                    HasOpenTicket = d.RepairRecords.Any(r => !r.IsDelivered),
+                })
+                .ToListAsync();
+
+            var items = rows.Select(r => new DeviceListDTO
+            {
+                Id = r.Id,
+                CustomerId = r.CustomerId,
+                CustomerFullName = r.CustomerFullName,
+                DeviceCode = r.DeviceCode,
+                DeviceName = r.DeviceName,
+                Brand = r.Brand,
+                Model = r.Model,
+                SerialNumber = r.SerialNumber,
+                DeviceType = r.DeviceType,
+                DeviceTypeLabel = GetDeviceTypeLabel(r.DeviceType),
+                RepairCount = r.RepairCount,
+                LastReceivedAt = r.LastReceivedAt,
+                CurrentStatus = r.LatestStatus.HasValue ? GetStatusLabel(r.LatestStatus.Value) : null,
+                HasOpenTicket = r.HasOpenTicket,
+            }).ToList();
 
             return new DevicePagedDTO { Items = items, HasMore = page * pageSize < total };
+        }
+
+        // DB projeksiyonu için ara taşıyıcı (etiketler C#'ta hesaplandığından ham değerler).
+        private sealed class DeviceListRow
+        {
+            public int Id { get; set; }
+            public int CustomerId { get; set; }
+            public string CustomerFullName { get; set; } = string.Empty;
+            public string DeviceCode { get; set; } = string.Empty;
+            public string DeviceName { get; set; } = string.Empty;
+            public string Brand { get; set; } = string.Empty;
+            public string Model { get; set; } = string.Empty;
+            public string? SerialNumber { get; set; }
+            public DeviceType DeviceType { get; set; }
+            public int RepairCount { get; set; }
+            public DateTime? LastReceivedAt { get; set; }
+            public RepairStatus? LatestStatus { get; set; }
+            public bool HasOpenTicket { get; set; }
         }
 
         // Cihazın AÇIK ziyaret bilgisi: en son kayıt teslim edilmemişse o ziyaretin başlangıç

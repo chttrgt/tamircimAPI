@@ -18,18 +18,23 @@ namespace TamircimAPI.Services.Dashboard
         {
             var now = DateTime.UtcNow;
 
-            // Cihazın GÜNCEL durumu = EN SON servis kaydı (DeviceQueryService ile aynı mantık).
-            // Aktif/bekleyen iş = en son kaydı teslim edilmemiş ve "Beklemede" olan CİHAZ.
-            // Böylece bir cihaz, birden çok Waiting kaydı olsa bile tek kez sayılır/listelenir.
-            var devices = await _db.Devices
+            // "Güncel durum = en son servis kaydı" mantığı C#'ta hesaplandığından, TÜM
+            // cihazları yüklemek yerine önce SQL'de YALNIZCA açık cihazlara (en son kaydı
+            // teslim EDİLMEMİŞ) indiriyoruz → açık-iş kümesi ≪ tüm cihazlar, ölçeklenir.
+            // Ziyaret mantığı (GetOpenDevices) bu küçük kümede aynen uygulanır. Toplam
+            // sayımlar SQL COUNT ile, son kayıtlar ayrı verimli sorguyla alınır.
+            var openDevices = await _db.Devices
+                .Where(d => d.RepairRecords.Any()
+                    && d.RepairRecords.OrderByDescending(r => r.ReceivedAt)
+                           .Select(r => r.IsDelivered).FirstOrDefault() == false)
                 .Include(d => d.RepairRecords)
                 .Include(d => d.Customer)
                 .ToListAsync();
 
-            var active = GetOpenDevices(devices);
+            var active = GetOpenDevices(openDevices);
 
             var stats = await GetStatsAsync(active, now);
-            var recentCustomers = GetRecentCustomers(devices);
+            var recentCustomers = await GetRecentCustomersAsync();
             var overdueDevices = GetOverdueDevices(active, now);
             var waitingForParts = GetActiveRepairs(active, now);
 
@@ -84,26 +89,43 @@ namespace TamircimAPI.Services.Dashboard
         }
 
         // Son Kayıtlar = MÜŞTERİ başına tek satır, müşterinin EN SON gelişine (RepairRecord) göre.
-        // Aynı müşteri başka cihaz ya da aynı cihazı n. kez getirse de tek satır; en son geliş
-        // tarihiyle ve o gelişteki cihazla görünür. Kart müşteri detayına gider.
-        private static List<DashboardDeviceDTO> GetRecentCustomers(List<Models.Device> devices)
+        // Tüm cihazları belleğe almadan: (1) DB'de müşteri başına max(ReceivedAt) ile en yeni 5
+        // müşteriyi bul, (2) yalnızca bu 5 müşterinin kayıtlarını çekip en son gelişlerini al.
+        private async Task<List<DashboardDeviceDTO>> GetRecentCustomersAsync()
         {
-            return devices
-                .SelectMany(d => d.RepairRecords.Select(r => new { Device = d, Record = r }))
-                .GroupBy(x => x.Device.CustomerId)
-                .Select(g => g.OrderByDescending(x => x.Record.ReceivedAt).First())  // müşterinin en son gelişi
-                .OrderByDescending(x => x.Record.ReceivedAt)                          // en son gelen müşteri üstte
+            var topCustomers = await _db.RepairRecords
+                .GroupBy(r => r.Device.CustomerId)
+                .Select(g => new { CustomerId = g.Key, LastAt = g.Max(r => r.ReceivedAt) })
+                .OrderByDescending(x => x.LastAt)
                 .Take(5)
-                .Select(x => new DashboardDeviceDTO
+                .ToListAsync();
+
+            if (topCustomers.Count == 0) return new List<DashboardDeviceDTO>();
+
+            var ids = topCustomers.Select(x => x.CustomerId).ToList();
+
+            // Yalnızca bu 5 müşterinin kayıtları (küçük küme) — her birinin en son gelişi.
+            var records = await _db.RepairRecords
+                .Where(r => ids.Contains(r.Device.CustomerId))
+                .Include(r => r.Device)
+                    .ThenInclude(d => d.Customer)
+                .ToListAsync();
+
+            return topCustomers
+                .Select(tc => records
+                    .Where(r => r.Device.CustomerId == tc.CustomerId)
+                    .OrderByDescending(r => r.ReceivedAt)
+                    .First())
+                .Select(r => new DashboardDeviceDTO
                 {
-                    CustomerId = x.Device.CustomerId,
-                    CustomerName = x.Device.Customer.FirstName + " " + x.Device.Customer.LastName,
-                    Phone = x.Device.Customer.Phone1,
-                    DeviceId = x.Device.Id,
-                    Brand = x.Device.Brand,
-                    Model = x.Device.Model,
-                    DeviceType = DeviceTypeLabel((int)x.Device.DeviceType),
-                    CreatedAt = x.Record.ReceivedAt   // kartta gösterilen tarih = en son gelişin tarihi
+                    CustomerId = r.Device.CustomerId,
+                    CustomerName = r.Device.Customer.FirstName + " " + r.Device.Customer.LastName,
+                    Phone = r.Device.Customer.Phone1,
+                    DeviceId = r.Device.Id,
+                    Brand = r.Device.Brand,
+                    Model = r.Device.Model,
+                    DeviceType = DeviceTypeLabel((int)r.Device.DeviceType),
+                    CreatedAt = r.ReceivedAt   // kartta gösterilen tarih = en son gelişin tarihi
                 })
                 .ToList();
         }

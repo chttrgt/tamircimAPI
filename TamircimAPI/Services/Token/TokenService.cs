@@ -61,5 +61,14 @@ namespace TamircimAPI.Services.Token
             rng.GetBytes(randomBytes);
             return Convert.ToBase64String(randomBytes);
         }
+
+        // SHA-256 → 64 karakter hex. Token yüksek entropili rastgele olduğundan
+        // (refresh 64 byte, e-posta 32 byte) salt/iterasyon gerekmez; ön-görüntü
+        // direnci yeterli. Hash deterministik → DB'de eşitlik/index ile aranabilir.
+        public string HashToken(string token)
+        {
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+            return Convert.ToHexString(bytes);
+        }
     }
 }
