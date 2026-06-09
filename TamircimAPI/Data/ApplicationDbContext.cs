@@ -345,6 +345,7 @@ namespace TamircimAPI.Data
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<UserPermission> UserPermissions { get; set; }
         public DbSet<EmailVerificationToken> EmailVerificationTokens { get; set; }
+        public DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
         #endregion
 
         #region MÜŞTERİ
@@ -423,6 +424,24 @@ namespace TamircimAPI.Data
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => e.Token).IsUnique();
                 entity.Property(e => e.Token).IsRequired().HasMaxLength(128);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Ignore(e => e.IsConsumed);
+                entity.Ignore(e => e.IsExpired);
+                entity.Ignore(e => e.IsValid);
+            });
+            #endregion
+
+            #region PasswordResetToken
+            modelBuilder.Entity<PasswordResetToken>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.CodeHash).IsRequired().HasMaxLength(128);
+                entity.HasIndex(e => e.UserId);
 
                 entity.HasOne(e => e.User)
                     .WithMany()

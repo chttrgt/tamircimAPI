@@ -15,5 +15,9 @@ namespace TamircimAPI.Services.Auth
         Task<LoginResponseDTO> RefreshTokenAsync(string refreshToken, string ipAddress);
         Task RevokeTokenAsync(string refreshToken, string ipAddress);
         Task<UpdateProfileResponseDTO> UpdateProfileAsync(int userId, UpdateProfileDTO dto, string ipAddress);
+        // "Şifremi unuttum": e-postaya 6 haneli kod gönderir (numaralandırma sızdırmaz).
+        Task ForgotPasswordAsync(ForgotPasswordDTO dto, string ipAddress, string lang);
+        // Kod + yeni şifre ile sıfırlar; tüm aktif oturumları iptal eder.
+        Task ResetPasswordAsync(ResetPasswordRequestDTO dto, string ipAddress);
     }
 }

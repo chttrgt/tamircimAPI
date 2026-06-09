@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TamircimAPI.Data;
 using TamircimAPI.Exceptions;
 using TamircimAPI.Models;
@@ -18,6 +19,7 @@ namespace TamircimAPI.Services.Auth
         private readonly IConfiguration _configuration;
         private readonly IEmailSender _emailSender;
         private readonly ICaptchaVerifier _captcha;
+        private readonly ILogger<AuthService> _logger;
 
         // Login zamanlama yan-kanalını kapatır: kullanıcı bulunamadığında da sabit bir
         // BCrypt doğrulaması çalıştırılır → "bu e-posta kayıtlı mı" yanıt süresi farkından
@@ -30,13 +32,15 @@ namespace TamircimAPI.Services.Auth
             ITokenService tokenService,
             IConfiguration configuration,
             IEmailSender emailSender,
-            ICaptchaVerifier captcha)
+            ICaptchaVerifier captcha,
+            ILogger<AuthService> logger)
         {
             _db = db;
             _tokenService = tokenService;
             _configuration = configuration;
             _emailSender = emailSender;
             _captcha = captcha;
+            _logger = logger;
         }
 
         private static LoginResponseDTO BuildLoginResponse(User user, string accessToken, string refreshToken) => new()
@@ -432,6 +436,132 @@ namespace TamircimAPI.Services.Auth
             rng.GetBytes(bytes);
             return Convert.ToBase64String(bytes)
                 .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        }
+
+        // ── Şifremi unuttum / sıfırla ─────────────────────────────────────────────
+
+        public async Task ForgotPasswordAsync(ForgotPasswordDTO dto, string ipAddress, string lang)
+        {
+            // Bot/spam koruması: captcha'yı her şeyden önce doğrula (fail-closed).
+            if (!await _captcha.VerifyAsync(dto.CaptchaToken, ipAddress))
+                throw new BusinessRuleException("Doğrulama başarısız. Lütfen tekrar deneyin.", "CAPTCHA_FAILED");
+
+            var email = dto.Email.Trim().ToLowerInvariant();
+
+            // Tenant bağlamı yok → IgnoreQueryFilters. Aktif kullanıcı.
+            var user = await _db.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
+
+            // Numaralandırma sızıntısı yok: e-posta yoksa sessizce başarı dön.
+            if (user == null) return;
+
+            // E-posta cooldown: son kod 2 dk içinde üretildiyse sessizce çık (spam + SMTP kotası).
+            var lastSentAt = await _db.PasswordResetTokens
+                .IgnoreQueryFilters()
+                .Where(t => t.UserId == user.Id)
+                .OrderByDescending(t => t.CreatedAt)
+                .Select(t => (DateTime?)t.CreatedAt)
+                .FirstOrDefaultAsync();
+            if (lastSentAt.HasValue && DateTime.UtcNow - lastSentAt.Value < TimeSpan.FromMinutes(2))
+                return;
+
+            // Eski kullanılmamış kodları tüket → aynı anda tek geçerli kod.
+            var oldTokens = await _db.PasswordResetTokens
+                .IgnoreQueryFilters()
+                .Where(t => t.UserId == user.Id && t.ConsumedAt == null)
+                .ToListAsync();
+            foreach (var t in oldTokens) t.ConsumedAt = DateTime.UtcNow;
+
+            var code = GenerateNumericCode(6);
+            _db.PasswordResetTokens.Add(new PasswordResetToken
+            {
+                UserId = user.Id,
+                CodeHash = _tokenService.HashToken(code), // DB'de hash; düz kod yalnızca e-postada
+                ExpiresAt = DateTime.UtcNow.AddMinutes(15),
+            });
+            await _db.SaveChangesAsync();
+
+            // E-posta hatası akışı bozmasın (numaralandırma tutarlılığı) — logla, sessiz geç.
+            try
+            {
+                await _emailSender.SendPasswordResetEmailAsync(user.Email, user.FullName, code, lang);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Şifre sıfırlama e-postası gönderilemedi: {Email}", user.Email);
+            }
+        }
+
+        public async Task ResetPasswordAsync(ResetPasswordRequestDTO dto, string ipAddress)
+        {
+            if (string.IsNullOrWhiteSpace(dto.NewPassword) || dto.NewPassword.Length < 8)
+                throw new ArgumentException("Şifre en az 8 karakter olmalıdır.");
+
+            var code = (dto.Code ?? string.Empty).Trim();
+            var email = dto.Email.Trim().ToLowerInvariant();
+
+            // Hata mesajları kasıtlı genel: "kod yanlış mı, süresi mi doldu, e-posta var mı"
+            // ayrımı sızdırılmaz.
+            var user = await _db.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
+            if (user == null)
+                throw new BusinessRuleException("Kod geçersiz veya süresi dolmuş.", "RESET_INVALID");
+
+            var token = await _db.PasswordResetTokens
+                .IgnoreQueryFilters()
+                .Where(t => t.UserId == user.Id && t.ConsumedAt == null)
+                .OrderByDescending(t => t.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (token == null || token.IsExpired)
+                throw new BusinessRuleException("Kod geçersiz veya süresi dolmuş.", "RESET_INVALID");
+
+            // Brute-force koruması: çok yanlış deneme → token'ı geçersiz kıl.
+            if (token.AttemptCount >= 5)
+            {
+                token.ConsumedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                throw new BusinessRuleException("Çok fazla yanlış deneme. Lütfen yeni kod iste.", "RESET_TOO_MANY");
+            }
+
+            if (token.CodeHash != _tokenService.HashToken(code))
+            {
+                token.AttemptCount++;
+                await _db.SaveChangesAsync();
+                throw new BusinessRuleException("Kod geçersiz veya süresi dolmuş.", "RESET_INVALID");
+            }
+
+            // Kod doğru → şifreyi güncelle + token'ı tüket.
+            var salt = BCrypt.Net.BCrypt.GenerateSalt(12);
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, salt);
+            user.PasswordSalt = salt;
+            user.MustChangePassword = false;
+            user.UpdatedAt = DateTime.UtcNow;
+            token.ConsumedAt = DateTime.UtcNow;
+
+            // Tüm aktif oturumları iptal et → eski şifreyle açılmış cihazlar düşer (güvenlik).
+            var activeTokens = await _db.RefreshTokens
+                .IgnoreQueryFilters()
+                .Where(t => t.UserId == user.Id && t.RevokedAt == null)
+                .ToListAsync();
+            foreach (var rt in activeTokens)
+            {
+                rt.RevokedAt = DateTime.UtcNow;
+                rt.RevokedByIp = ipAddress;
+                rt.RevokeReason = "Password reset";
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        // Kriptografik rastgele 6 haneli kod (000000–999999; baştaki sıfırlar korunur).
+        private static string GenerateNumericCode(int digits)
+        {
+            var max = (int)Math.Pow(10, digits);
+            var n = RandomNumberGenerator.GetInt32(max);
+            return n.ToString(new string('0', digits));
         }
     }
 }

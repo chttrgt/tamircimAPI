@@ -62,6 +62,27 @@ namespace TamircimAPI.Controllers
             return Ok(new { message = "Hesap doğrulanmamışsa yeni bir doğrulama e-postası gönderildi." });
         }
 
+        // Şifremi unuttum: e-postaya 6 haneli kod gönderir. Numaralandırma sızdırmaz
+        // (her zaman aynı yanıt). Captcha + rate-limit ile bot/spam korumalı.
+        [HttpPost("forgot-password")]
+        [EnableRateLimiting("login")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDTO dto)
+        {
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            await _authService.ForgotPasswordAsync(dto, ipAddress, ResolveLang());
+            return Ok(new { message = "E-posta kayıtlıysa şifre sıfırlama kodu gönderildi." });
+        }
+
+        // Kod + yeni şifre ile sıfırlar. Başarılı olunca tüm oturumlar iptal edilir.
+        [HttpPost("reset-password")]
+        [EnableRateLimiting("login")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequestDTO dto)
+        {
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            await _authService.ResetPasswordAsync(dto, ipAddress);
+            return Ok(new { message = "Şifren güncellendi. Yeni şifrenle giriş yapabilirsin." });
+        }
+
         [HttpPost("login")]
         [EnableRateLimiting("login")]
         public async Task<IActionResult> Login([FromBody] LoginDTO dto)

@@ -155,5 +155,128 @@ namespace TamircimAPI.Services.Email
 
         private static string GetFromAddressText() =>
             Environment.GetEnvironmentVariable("SMTP_FROM") ?? "Tamircim";
+
+        // ── Şifre sıfırlama (6 haneli kod) ────────────────────────────────────────
+        public async Task SendPasswordResetEmailAsync(string toEmail, string toName, string code, string lang)
+        {
+            var host = Require("SMTP_HOST");
+            var port = int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var p) ? p : 587;
+            var user = Environment.GetEnvironmentVariable("SMTP_USER");
+            var pass = Environment.GetEnvironmentVariable("SMTP_PASS");
+            var from = Require("SMTP_FROM");
+            var fromName = Environment.GetEnvironmentVariable("SMTP_FROM_NAME") ?? "Tamircim";
+
+            var s = ResetStrings(lang);
+
+            var message = new MimeMessage();
+            message.From.Add(new MailboxAddress(fromName, from));
+            message.To.Add(new MailboxAddress(toName, toEmail));
+            message.Subject = s.Subject;
+
+            var builder = new BodyBuilder
+            {
+                HtmlBody = BuildResetHtmlBody(toName, code, from, s),
+                TextBody = BuildResetTextBody(toName, code, s),
+            };
+            message.Body = builder.ToMessageBody();
+
+            using var client = new SmtpClient();
+            var socketOptions = port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+            await client.ConnectAsync(host, port, socketOptions);
+            if (!string.IsNullOrEmpty(user))
+                await client.AuthenticateAsync(user, pass ?? string.Empty);
+            await client.SendAsync(message);
+            await client.DisconnectAsync(true);
+
+            _logger.LogInformation("Şifre sıfırlama e-postası gönderildi: {Email} ({Lang})", toEmail, lang);
+        }
+
+        private sealed record ResetStrings_(
+            string Subject, string Greeting, string Intro, string CodeLabel,
+            string Expiry, string Ignore, string SpamNote, string Footer);
+
+        private static ResetStrings_ ResetStrings(string lang) => lang switch
+        {
+            "en" => new ResetStrings_(
+                "Your Tamircim password reset code",
+                "Hello {0},",
+                "Use the code below to reset your Tamircim password:",
+                "Reset code",
+                "This code is valid for 15 minutes.",
+                "If you didn't request a password reset, you can ignore this email — your password stays the same.",
+                "📩 If this email landed in your <strong>Spam/Junk</strong> folder, please add <strong>{0}</strong> to your contacts.",
+                "© Tamircim — Repair Service Management"),
+            "de" => new ResetStrings_(
+                "Ihr Tamircim-Code zum Zurücksetzen des Passworts",
+                "Hallo {0},",
+                "Verwenden Sie den folgenden Code, um Ihr Tamircim-Passwort zurückzusetzen:",
+                "Code",
+                "Dieser Code ist 15 Minuten gültig.",
+                "Falls Sie kein Zurücksetzen angefordert haben, ignorieren Sie diese E-Mail — Ihr Passwort bleibt gleich.",
+                "📩 Falls diese E-Mail im <strong>Spam-/Junk-Ordner</strong> gelandet ist, fügen Sie bitte <strong>{0}</strong> zu Ihren Kontakten hinzu.",
+                "© Tamircim — Verwaltung technischer Dienste"),
+            _ => new ResetStrings_(
+                "Tamircim şifre sıfırlama kodun",
+                "Merhaba {0},",
+                "Tamircim şifreni sıfırlamak için aşağıdaki kodu kullan:",
+                "Sıfırlama kodu",
+                "Bu kod 15 dakika geçerlidir.",
+                "Şifre sıfırlama talebinde bulunmadıysan bu e-postayı yok sayabilirsin — şifren aynı kalır.",
+                "📩 Bu e-postayı <strong>Spam/Önemsiz</strong> klasöründe bulduysan lütfen <strong>{0}</strong> adresini kişilerine ekle.",
+                "© Tamircim — Teknik Servis Yönetimi"),
+        };
+
+        private static string BuildResetHtmlBody(string name, string code, string fromAddress, ResetStrings_ s)
+        {
+            var safeName = System.Net.WebUtility.HtmlEncode(name);
+            var greeting = string.Format(s.Greeting, safeName);
+            var spamNote = string.Format(s.SpamNote, System.Net.WebUtility.HtmlEncode(fromAddress));
+            return $@"<!DOCTYPE html>
+<html>
+<head><meta charset=""utf-8""><meta name=""viewport"" content=""width=device-width, initial-scale=1.0""></head>
+<body style=""margin:0;padding:0;background-color:#f1f5f9;"">
+  <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#f1f5f9;padding:24px 0;"">
+    <tr><td align=""center"">
+      <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""max-width:480px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,0.06);"">
+        <tr><td style=""background-color:#06B6D4;padding:28px 32px;text-align:center;"">
+          <span style=""font-family:Arial,Helvetica,sans-serif;font-size:24px;font-weight:bold;color:#ffffff;letter-spacing:1px;"">Tamircim</span>
+        </td></tr>
+        <tr><td style=""padding:32px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;"">
+          <p style=""margin:0 0 12px;font-size:16px;"">{greeting}</p>
+          <p style=""margin:0 0 20px;font-size:15px;line-height:22px;color:#334155;"">{s.Intro}</p>
+          <p style=""margin:0 0 6px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;"">{s.CodeLabel}</p>
+          <div style=""margin:0 0 20px;padding:18px;text-align:center;background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-family:'Courier New',monospace;font-size:34px;font-weight:bold;letter-spacing:8px;color:#0f172a;"">{code}</div>
+          <p style=""margin:0 0 16px;font-size:13px;color:#64748b;"">{s.Expiry}</p>
+          <p style=""margin:0 0 20px;font-size:13px;color:#64748b;"">{s.Ignore}</p>
+          <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;"">
+            <tr><td style=""padding:14px 16px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#64748b;"">{spamNote}</td></tr>
+          </table>
+        </td></tr>
+        <tr><td style=""padding:20px 32px;background-color:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;"">
+          <span style=""font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#94a3b8;"">{s.Footer}</span>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>";
+        }
+
+        private static string BuildResetTextBody(string name, string code, ResetStrings_ s)
+        {
+            var spam = s.SpamNote.Replace("<strong>", "").Replace("</strong>", "");
+            return $@"{string.Format(s.Greeting, name)}
+
+{s.Intro}
+
+{s.CodeLabel}: {code}
+
+{s.Expiry}
+{s.Ignore}
+
+{string.Format(spam, GetFromAddressText())}
+
+— Tamircim";
+        }
     }
 }
