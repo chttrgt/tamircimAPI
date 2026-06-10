@@ -56,6 +56,13 @@ namespace TamircimAPI.Models.DTOs.Repair
         public DateTime? DeliveredAt { get; set; }
     }
 
+    // Yalnızca anlaşılan ücreti günceller (tahsilat ekranından hızlı düzenleme).
+    // null → fiyat temizlenir/belirlenmemiş sayılır. Diğer alanlara dokunulmaz.
+    public class SetPriceDTO
+    {
+        public decimal? Price { get; set; }
+    }
+
     public class UpdateRepairRecordDTO
     {
         public string FaultDescription { get; set; } = string.Empty;

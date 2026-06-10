@@ -76,6 +76,20 @@ namespace TamircimAPI.Services.Repair
             return (await _query.GetByIdAsync(id))!;
         }
 
+        // Yalnızca anlaşılan ücreti günceller. Servis kaydının diğer alanlarını (durum,
+        // yapılan iş vb.) yeniden göndermeye gerek bırakmaz → tahsilat ekranından hızlı
+        // fiyat girişi için. Ödeme durumu/kalan zaten okuma anında Price'tan türetilir.
+        public async Task<RepairRecordDTO> SetPriceAsync(int id, decimal? price)
+        {
+            var record = await _db.RepairRecords.FirstOrDefaultAsync(r => r.Id == id)
+                ?? throw new KeyNotFoundException($"Servis kaydı bulunamadı: {id}");
+
+            record.Price = price;
+            await _db.SaveChangesAsync();
+
+            return (await _query.GetByIdAsync(id))!;
+        }
+
         public async Task<RepairRecordDTO> MarkDeliveredAsync(int id, DateTime? deliveredAt = null)
         {
             var record = await _db.RepairRecords.FirstOrDefaultAsync(r => r.Id == id)

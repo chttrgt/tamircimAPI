@@ -31,6 +31,14 @@ namespace TamircimAPI.Validators
         }
     }
 
+    public class SetPriceDTOValidator : AbstractValidator<SetPriceDTO>
+    {
+        public SetPriceDTOValidator()
+        {
+            RuleFor(x => x.Price).ValidPrice().When(x => x.Price.HasValue);
+        }
+    }
+
     public class UpdateRepairRecordDTOValidator : AbstractValidator<UpdateRepairRecordDTO>
     {
         public UpdateRepairRecordDTOValidator()

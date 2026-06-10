@@ -52,6 +52,14 @@ namespace TamircimAPI.Controllers
             return Ok(result);
         }
 
+        [HttpPatch("{id:int}/price")]
+        [HasPermission(Permissions.RepairsEdit)]
+        public async Task<IActionResult> SetPrice(int id, [FromBody] SetPriceDTO dto)
+        {
+            var result = await _command.SetPriceAsync(id, dto.Price);
+            return Ok(result);
+        }
+
         [HttpPatch("{id:int}/deliver")]
         [HasPermission(Permissions.RepairsEdit)]
         public async Task<IActionResult> MarkDelivered(int id, [FromBody] MarkDeliveredDTO? dto = null)
