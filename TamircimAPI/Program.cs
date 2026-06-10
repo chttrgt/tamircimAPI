@@ -55,7 +55,35 @@ Env.Load();
 var sentryDsn = Environment.GetEnvironmentVariable("SENTRY_DSN");
 if (!string.IsNullOrWhiteSpace(sentryDsn))
 {
-    builder.WebHost.UseSentry(sentryDsn);
+    builder.WebHost.UseSentry(o =>
+    {
+        o.Dsn = sentryDsn;
+        o.Environment = builder.Environment.EnvironmentName;
+        o.SendDefaultPii = false;
+        o.TracesSampleRate = 0.1;
+        o.SetBeforeSend((sentryEvent, _) =>
+        {
+            var sensitive = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "password", "confirmPassword", "token", "accessToken", "refreshToken",
+                  "email", "captchaToken", "Authorization" };
+
+            if (sentryEvent.Request is { } req)
+            {
+                req.Cookies = null;
+                req.Headers?.Keys
+                    .Where(k => sensitive.Contains(k))
+                    .ToList()
+                    .ForEach(k => req.Headers[k] = "***");
+            }
+
+            foreach (var ex in sentryEvent.SentryExceptions ?? [])
+                foreach (var frame in ex.Stacktrace?.Frames ?? [])
+                    foreach (var key in frame.Vars?.Keys.Where(k => sensitive.Contains(k)).ToList() ?? [])
+                        frame.Vars![key] = "***";
+
+            return sentryEvent;
+        });
+    });
 }
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
@@ -333,7 +361,6 @@ app.MapControllers();
 app.MapGet("/", () => "Tamircim API v1.0.0");
 app.MapGet("/health", async (ApplicationDbContext db) =>
 {
-    SentrySdk.CaptureMessage("Sentry test - tamircim-backend");
     try
     {
         await db.Database.CanConnectAsync();
