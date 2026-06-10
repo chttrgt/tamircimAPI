@@ -55,41 +55,7 @@ Env.Load();
 var sentryDsn = Environment.GetEnvironmentVariable("SENTRY_DSN");
 if (!string.IsNullOrWhiteSpace(sentryDsn))
 {
-    builder.WebHost.UseSentry(o =>
-    {
-        o.Dsn = sentryDsn;
-        o.Environment = builder.Environment.EnvironmentName;
-        o.SendDefaultPii = false;
-        o.MinimumBreadcrumbLevel = LogEventLevel.Information;
-        o.MinimumEventLevel = LogEventLevel.Error;
-        o.TracesSampleRate = 0.1;
-        o.SetBeforeSend((sentryEvent, _) =>
-        {
-            // Şifre, token, e-posta içeren form field'larını temizle
-            static string? Scrub(string? v) => v is null ? null : "***";
-            var sensitive = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { "password", "confirmPassword", "token", "accessToken", "refreshToken",
-                  "email", "captchaToken", "Authorization" };
-
-            if (sentryEvent.Request is { } req)
-            {
-                req.Cookies = Scrub(req.Cookies);
-                req.Headers?.Keys
-                    .Where(k => sensitive.Contains(k))
-                    .ToList()
-                    .ForEach(k => req.Headers[k] = "***");
-            }
-
-            foreach (var ex in sentryEvent.SentryExceptions ?? [])
-            {
-                foreach (var frame in ex.Stacktrace?.Frames ?? [])
-                    foreach (var key in frame.Vars?.Keys.Where(k => sensitive.Contains(k)).ToList() ?? [])
-                        frame.Vars![key] = "***";
-            }
-
-            return sentryEvent;
-        });
-    });
+    builder.WebHost.UseSentry(sentryDsn);
 }
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
