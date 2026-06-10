@@ -325,6 +325,18 @@ app.UseMiddleware<UserEnrichmentMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 app.MapGet("/", () => "Tamircim API v1.0.0");
+app.MapGet("/health", async (ApplicationDbContext db) =>
+{
+    try
+    {
+        await db.Database.CanConnectAsync();
+        return Results.Ok(new { status = "ok", db = "ok", ts = DateTime.UtcNow });
+    }
+    catch
+    {
+        return Results.Json(new { status = "degraded", db = "error", ts = DateTime.UtcNow }, statusCode: 503);
+    }
+}).AllowAnonymous();
 
 app.Run();
 
