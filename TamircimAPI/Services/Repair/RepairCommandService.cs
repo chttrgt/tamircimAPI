@@ -41,7 +41,8 @@ namespace TamircimAPI.Services.Repair
                 NotRepairedReason = dto.NotRepairedReason?.Trim(),
                 WaitingReason = dto.WaitingReason?.Trim(),
                 CompletedAt = dto.CompletedAt,
-                Notes = dto.Notes?.Trim()
+                Notes = dto.Notes?.Trim(),
+                Price = dto.Price
             };
 
             _db.RepairRecords.Add(record);
@@ -68,6 +69,7 @@ namespace TamircimAPI.Services.Repair
             record.WaitingReason = dto.WaitingReason?.Trim();
             record.CompletedAt = dto.CompletedAt;
             record.Notes = dto.Notes?.Trim();
+            record.Price = dto.Price;
 
             await _db.SaveChangesAsync();
 

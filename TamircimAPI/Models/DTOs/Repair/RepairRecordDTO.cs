@@ -1,3 +1,4 @@
+using TamircimAPI.Models.DTOs.Payment;
 using TamircimAPI.Models.Enums;
 
 namespace TamircimAPI.Models.DTOs.Repair
@@ -23,6 +24,12 @@ namespace TamircimAPI.Models.DTOs.Repair
         public string? WaitingReason { get; set; }
         public DateTime? CompletedAt { get; set; }
         public string? Notes { get; set; }
+        // Ücret/ödeme. Remaining ve PaymentStatus, Price ile TotalPaid'den hesaplanır.
+        public decimal? Price { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal? Remaining { get; set; }
+        public PaymentStatus PaymentStatus { get; set; }
+        public List<PaymentDTO> Payments { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
     }
@@ -40,6 +47,8 @@ namespace TamircimAPI.Models.DTOs.Repair
         public string? WaitingReason { get; set; }
         public DateTime? CompletedAt { get; set; }
         public string? Notes { get; set; }
+        // Anlaşılan ücret (opsiyonel). null bırakılırsa fiyatlandırma sonraya kalır.
+        public decimal? Price { get; set; }
     }
 
     public class MarkDeliveredDTO
@@ -58,6 +67,8 @@ namespace TamircimAPI.Models.DTOs.Repair
         public string? WaitingReason { get; set; }
         public DateTime? CompletedAt { get; set; }
         public string? Notes { get; set; }
+        // Anlaşılan ücret (opsiyonel). null → fiyat temizlenir/belirlenmemiş sayılır.
+        public decimal? Price { get; set; }
     }
 
     public class RepairRecordListDTO
@@ -80,6 +91,11 @@ namespace TamircimAPI.Models.DTOs.Repair
         public string? NotRepairedReason { get; set; }
         public string? WaitingReason { get; set; }
         public string? Notes { get; set; }
+        // Ücret/ödeme özeti (liste için; ödeme satırları dahil edilmez)
+        public decimal? Price { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal? Remaining { get; set; }
+        public PaymentStatus PaymentStatus { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
     }

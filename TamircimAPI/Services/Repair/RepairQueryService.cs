@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using TamircimAPI.Data;
 using TamircimAPI.Models.DTOs.Repair;
 using TamircimAPI.Models.Enums;
+using TamircimAPI.Services.Payment;
 
 namespace TamircimAPI.Services.Repair
 {
@@ -26,7 +27,7 @@ namespace TamircimAPI.Services.Repair
             if (status.HasValue)
                 query = query.Where(r => r.Status == status.Value);
 
-            return await query
+            var items = await query
                 .OrderByDescending(r => r.ReceivedAt)
                 .Select(r => new RepairRecordListDTO
                 {
@@ -50,19 +51,36 @@ namespace TamircimAPI.Services.Repair
                     NotRepairedReason = r.NotRepairedReason,
                     WaitingReason = r.WaitingReason,
                     Notes = r.Notes,
+                    Price = r.Price,
+                    // Silinen ödemeler global query filter ile zaten elenir.
+                    TotalPaid = r.Payments.Sum(p => (decimal?)p.Amount) ?? 0m,
                     CreatedAt = r.CreatedAt,
                     CompletedAt = r.CompletedAt
                 })
                 .ToListAsync();
+
+            // Kalan tutar ve ödeme durumu Price + TotalPaid'den türetilir (saklanmaz).
+            foreach (var item in items)
+            {
+                item.Remaining = PaymentCalculator.Remaining(item.Price, item.TotalPaid);
+                item.PaymentStatus = PaymentCalculator.Status(item.Price, item.TotalPaid);
+            }
+
+            return items;
         }
 
         public async Task<RepairRecordDTO?> GetByIdAsync(int id)
         {
             var r = await _db.RepairRecords
                 .Include(x => x.Device).ThenInclude(d => d.Customer)
+                .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (r == null) return null;
+
+            // Payments navigation'ı global query filter ile tenant-scope'lu ve silinmemiş gelir.
+            var payments = r.Payments.OrderBy(p => p.PaidAt).Select(PaymentMapper.ToDTO).ToList();
+            var totalPaid = r.Payments.Sum(p => p.Amount);
 
             return new RepairRecordDTO
             {
@@ -87,6 +105,11 @@ namespace TamircimAPI.Services.Repair
                 WaitingReason = r.WaitingReason,
                 CompletedAt = r.CompletedAt,
                 Notes = r.Notes,
+                Price = r.Price,
+                TotalPaid = totalPaid,
+                Remaining = PaymentCalculator.Remaining(r.Price, totalPaid),
+                PaymentStatus = PaymentCalculator.Status(r.Price, totalPaid),
+                Payments = payments,
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt
             };

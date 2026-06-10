@@ -360,6 +360,10 @@ namespace TamircimAPI.Data
         public DbSet<RepairRecord> RepairRecords { get; set; }
         #endregion
 
+        #region ÖDEME
+        public DbSet<Payment> Payments { get; set; }
+        #endregion
+
         #region CİHAZ FOTOĞRAFI
         public DbSet<DevicePhoto> DevicePhotos { get; set; }
         #endregion
@@ -591,6 +595,8 @@ namespace TamircimAPI.Data
                 entity.Property(e => e.NotRepairedReason).HasColumnType("text");
                 entity.Property(e => e.WaitingReason).HasColumnType("text");
                 entity.Property(e => e.Notes).HasColumnType("text");
+                // Para: numeric(12,2). decimal kullanılır, float/double ASLA.
+                entity.Property(e => e.Price).HasColumnType("numeric(12,2)");
 
                 entity.HasIndex(e => new { e.TenantId, e.TicketNo }).IsUnique();
                 entity.HasIndex(e => new { e.TenantId, e.DeviceId });
@@ -617,6 +623,46 @@ namespace TamircimAPI.Data
                     .WithMany()
                     .HasForeignKey(e => e.DeletedByUserId)
                     .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
+            });
+            #endregion
+
+            #region Payment
+            modelBuilder.Entity<Payment>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                UseXminConcurrency(entity); // optimistic concurrency (xmin)
+                // Para: numeric(12,2). decimal kullanılır, float/double ASLA.
+                entity.Property(e => e.Amount).HasColumnType("numeric(12,2)");
+                entity.Property(e => e.Method).HasConversion<int>();
+                entity.Property(e => e.Note).HasColumnType("text");
+
+                // RepairRecord soft-delete edilince ödemeler de cascade soft-delete olsun
+                // (CascadeSoftDelete, Restrict davranışını da kapsar). Hard-delete için
+                // Restrict → servis kaydı varken DB seviyesinde ödeme yetim kalmaz.
+                entity.HasOne(e => e.RepairRecord)
+                    .WithMany(r => r.Payments)
+                    .HasForeignKey(e => e.RepairRecordId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.CreatedByUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.CreatedByUserId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(e => e.UpdatedByUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.UpdatedByUserId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(e => e.DeletedByUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.DeletedByUserId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                // Bir servis kaydının ödemelerini hızlı çekmek için.
+                entity.HasIndex(e => new { e.TenantId, e.RepairRecordId });
 
                 entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
             });

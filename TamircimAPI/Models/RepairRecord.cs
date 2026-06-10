@@ -40,6 +40,10 @@ namespace TamircimAPI.Models
         public DateTime? CompletedAt { get; set; }
         public string? Notes { get; set; }
 
+        // Bu geliş için anlaşılan toplam ücret. null = henüz fiyatlandırılmadı
+        // (teslim alırken ücret belli olmayabilir). numeric(12,2).
+        public decimal? Price { get; set; }
+
         // IAuditable
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -55,5 +59,7 @@ namespace TamircimAPI.Models
         public User? CreatedByUser { get; set; }
         public User? UpdatedByUser { get; set; }
         public User? DeletedByUser { get; set; }
+
+        public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     }
 }

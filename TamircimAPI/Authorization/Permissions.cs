@@ -16,6 +16,9 @@ namespace TamircimAPI.Authorization
         public const string RepairsEdit     = "repairs.edit";
         public const string RepairsDelete   = "repairs.delete";
 
+        public const string PaymentsCreate  = "payments.create";
+        public const string PaymentsDelete  = "payments.delete";
+
         public const string PhotosCreate     = "photos.create";
         public const string PhotosDelete     = "photos.delete";
 
@@ -26,6 +29,7 @@ namespace TamircimAPI.Authorization
             CustomersCreate, CustomersEdit, CustomersDelete,
             DevicesCreate,   DevicesEdit,   DevicesDelete,
             RepairsCreate,   RepairsEdit,   RepairsDelete,
+            PaymentsCreate,  PaymentsDelete,
             PhotosCreate,    PhotosDelete,
         };
 
