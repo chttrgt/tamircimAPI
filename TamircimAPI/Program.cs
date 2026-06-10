@@ -359,7 +359,7 @@ app.UseMiddleware<UserEnrichmentMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 app.MapGet("/", () => "Tamircim API v1.0.0");
-app.MapGet("/health", async (ApplicationDbContext db) =>
+app.MapMethods("/health", ["GET", "HEAD"], async (ApplicationDbContext db) =>
 {
     try
     {
