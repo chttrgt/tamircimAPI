@@ -367,6 +367,7 @@ app.MapControllers();
 app.MapGet("/", () => "Tamircim API v1.0.0");
 app.MapGet("/health", async (ApplicationDbContext db) =>
 {
+    SentrySdk.CaptureMessage("Sentry test - tamircim-backend");
     try
     {
         await db.Database.CanConnectAsync();
