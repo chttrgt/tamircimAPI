@@ -3,6 +3,7 @@ using TamircimAPI.Data;
 using TamircimAPI.Models.DTOs.Device;
 using TamircimAPI.Models.DTOs.Repair;
 using TamircimAPI.Models.Enums;
+using TamircimAPI.Services.Payment;
 
 namespace TamircimAPI.Services.Device
 {
@@ -257,6 +258,7 @@ namespace TamircimAPI.Services.Device
         {
             var devices = await _db.Devices
                 .Include(d => d.RepairRecords)
+                    .ThenInclude(r => r.Payments) // ziyaret toplam tahsilatı için (soft-delete query filter ile elenir)
                 .Where(d => d.CustomerId == customerId)
                 .ToListAsync();
 
@@ -285,8 +287,12 @@ namespace TamircimAPI.Services.Device
                 var totalVisits = groups.Count;
                 for (var gi = 0; gi < groups.Count; gi++)
                 {
-                    var first = groups[gi][0];      // geliş (intake)
+                    var first = groups[gi][0];      // geliş (intake) = çıpa: ücret burada
                     var last = groups[gi][^1];      // son işlem — durum buradan
+
+                    // Para ziyaretin tamamına ait: ücret çıpada, tahsilat tüm kayıtlarda toplanır.
+                    var price = first.Price;
+                    var totalPaid = groups[gi].Sum(r => r.Payments.Sum(p => p.Amount));
 
                     visits.Add(new CustomerVisitDTO
                     {
@@ -314,6 +320,10 @@ namespace TamircimAPI.Services.Device
                             _ => last.WaitingReason
                         },
                         Notes = last.Notes,
+                        Price = price,
+                        TotalPaid = totalPaid,
+                        Remaining = PaymentCalculator.Remaining(price, totalPaid),
+                        PaymentStatus = PaymentCalculator.Status(price, totalPaid),
                         VisitNo = gi + 1,
                         TotalVisits = totalVisits
                     });

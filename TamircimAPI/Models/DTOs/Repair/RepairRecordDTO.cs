@@ -132,6 +132,12 @@ namespace TamircimAPI.Models.DTOs.Repair
         public string? StatusDetail { get; set; }
         // Duruma ilişkin not
         public string? Notes { get; set; }
+        // Ödeme özeti — ücret ziyaretin çıpa (geliş) kaydında tutulur, tahsilat ziyaret
+        // boyunca toplanır. Kalan/durum Price + TotalPaid'den türetilir (bkz PaymentCalculator).
+        public decimal? Price { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal? Remaining { get; set; }
+        public PaymentStatus PaymentStatus { get; set; }
         // Bu cihazın kaçıncı ziyareti ve toplam ziyaret sayısı
         public int VisitNo { get; set; }
         public int TotalVisits { get; set; }
