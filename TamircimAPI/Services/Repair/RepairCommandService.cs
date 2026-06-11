@@ -41,8 +41,8 @@ namespace TamircimAPI.Services.Repair
                 NotRepairedReason = dto.NotRepairedReason?.Trim(),
                 WaitingReason = dto.WaitingReason?.Trim(),
                 CompletedAt = dto.CompletedAt,
-                Notes = dto.Notes?.Trim(),
-                Price = dto.Price
+                Notes = dto.Notes?.Trim()
+                // Ücret oluşturmada set edilmez; sürecin çıpasında SetPrice ile yönetilir.
             };
 
             _db.RepairRecords.Add(record);
@@ -69,7 +69,7 @@ namespace TamircimAPI.Services.Repair
             record.WaitingReason = dto.WaitingReason?.Trim();
             record.CompletedAt = dto.CompletedAt;
             record.Notes = dto.Notes?.Trim();
-            record.Price = dto.Price;
+            // Ücrete dokunulmaz — yalnızca SetPrice günceller (durum güncellemesi fiyatı silmesin).
 
             await _db.SaveChangesAsync();
 

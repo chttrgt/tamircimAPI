@@ -47,8 +47,9 @@ namespace TamircimAPI.Models.DTOs.Repair
         public string? WaitingReason { get; set; }
         public DateTime? CompletedAt { get; set; }
         public string? Notes { get; set; }
-        // Anlaşılan ücret (opsiyonel). null bırakılırsa fiyatlandırma sonraya kalır.
-        public decimal? Price { get; set; }
+        // Not: Ücret burada YOK. Para (ücret + tahsilat) tek kayda değil onarım sürecine
+        // aittir → yalnızca PATCH /repairs/{id}/price (SetPriceDTO) ile, sürecin çıpa
+        // kaydı üzerinden yönetilir. Böylece durum güncellemesi ücreti yanlışlıkla silmez.
     }
 
     public class MarkDeliveredDTO
@@ -74,8 +75,7 @@ namespace TamircimAPI.Models.DTOs.Repair
         public string? WaitingReason { get; set; }
         public DateTime? CompletedAt { get; set; }
         public string? Notes { get; set; }
-        // Anlaşılan ücret (opsiyonel). null → fiyat temizlenir/belirlenmemiş sayılır.
-        public decimal? Price { get; set; }
+        // Ücret bu DTO'da YOK; bkz CreateRepairRecordDTO notu — yalnızca SetPrice ile yönetilir.
     }
 
     public class RepairRecordListDTO

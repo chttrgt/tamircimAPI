@@ -27,7 +27,6 @@ namespace TamircimAPI.Validators
                 .WithMessage("Onarıldı durumunda yapılan işlemler zorunludur.");
             RuleFor(x => x.NotRepairedReason).NotEmpty().When(x => x.Status == RepairStatus.NotRepaired)
                 .WithMessage("Onarılmadı durumunda sebep zorunludur.");
-            RuleFor(x => x.Price).ValidPrice().When(x => x.Price.HasValue);
         }
     }
 
@@ -47,7 +46,6 @@ namespace TamircimAPI.Validators
                 .WithMessage("Onarıldı durumunda yapılan işlemler zorunludur.");
             RuleFor(x => x.NotRepairedReason).NotEmpty().When(x => x.Status == RepairStatus.NotRepaired)
                 .WithMessage("Onarılmadı durumunda sebep zorunludur.");
-            RuleFor(x => x.Price).ValidPrice().When(x => x.Price.HasValue);
         }
     }
 }
