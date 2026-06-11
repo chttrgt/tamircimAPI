@@ -636,7 +636,7 @@ namespace TamircimAPI.Services.Auth
             if (user.TwoFactorEnabled)
                 throw new BusinessRuleException("İki adımlı doğrulama zaten açık.", "TFA_ALREADY");
 
-            var challengeToken = await CreateChallengeAsync(user, TwoFactorPurpose.Enable, lang);
+            var challengeToken = await CreateChallengeAsync(user, TwoFactorPurpose.Enable, lang, surfaceEmailError: true);
             return new TwoFactorChallengeResponseDTO
             {
                 ChallengeToken = challengeToken,
@@ -682,7 +682,7 @@ namespace TamircimAPI.Services.Auth
 
         // Yeni challenge üretir: aynı amaçtaki eski kodları tüketir, kodu e-postayla yollar,
         // istemciye opak challenge token döner (DB'de yalnızca hash'leri tutulur).
-        private async Task<string> CreateChallengeAsync(User user, TwoFactorPurpose purpose, string lang)
+        private async Task<string> CreateChallengeAsync(User user, TwoFactorPurpose purpose, string lang, bool surfaceEmailError = false)
         {
             var old = await _db.TwoFactorChallenges
                 .IgnoreQueryFilters()
@@ -702,8 +702,18 @@ namespace TamircimAPI.Services.Auth
             });
             await _db.SaveChangesAsync();
 
-            try { await _emailSender.SendTwoFactorCodeEmailAsync(user.Email, user.FullName, code, lang); }
-            catch (Exception ex) { _logger.LogError(ex, "2FA kodu gönderilemedi: {Email}", user.Email); }
+            try
+            {
+                await _emailSender.SendTwoFactorCodeEmailAsync(user.Email, user.FullName, code, lang);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "2FA kodu gönderilemedi: {Email}", user.Email);
+                // Public akışlar (login) sessiz kalır; kimlik doğrulamalı "açma" akışında
+                // (numaralandırma riski yok) hata kullanıcıya gösterilir → yanıltıcı "gönderildi" olmaz.
+                if (surfaceEmailError)
+                    throw new BusinessRuleException("Kod e-postası gönderilemedi. Lütfen tekrar deneyin.", "EMAIL_SEND_FAILED");
+            }
 
             return challengeToken;
         }
