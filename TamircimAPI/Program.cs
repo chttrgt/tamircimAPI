@@ -187,6 +187,7 @@ builder.Services.AddScoped<IRepairQueryService, RepairQueryService>();
 builder.Services.AddScoped<IRepairCommandService, RepairCommandService>();
 builder.Services.AddScoped<TamircimAPI.Services.Payment.IPaymentCommandService, TamircimAPI.Services.Payment.PaymentCommandService>();
 builder.Services.AddScoped<TamircimAPI.Services.Payment.IPaymentQueryService, TamircimAPI.Services.Payment.PaymentQueryService>();
+builder.Services.AddScoped<TamircimAPI.Services.Report.IReportQueryService, TamircimAPI.Services.Report.ReportQueryService>();
 
 // Cihaz fotoğrafları (depolama + servis + 30 gün GC görevi)
 builder.Services.AddSingleton<TamircimAPI.Services.Storage.IPhotoStorage, TamircimAPI.Services.Storage.LocalPhotoStorage>();

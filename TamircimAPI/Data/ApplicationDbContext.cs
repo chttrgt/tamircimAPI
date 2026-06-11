@@ -663,6 +663,8 @@ namespace TamircimAPI.Data
 
                 // Bir servis kaydının ödemelerini hızlı çekmek için.
                 entity.HasIndex(e => new { e.TenantId, e.RepairRecordId });
+                // Raporlama: tarih aralığına göre tahsilat sorguları (gelir/trend/yöntem).
+                entity.HasIndex(e => new { e.TenantId, e.PaidAt });
 
                 entity.HasQueryFilter(e => !e.IsDeleted && e.TenantId == CurrentTenantId);
             });
