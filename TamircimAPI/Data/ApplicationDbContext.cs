@@ -346,6 +346,7 @@ namespace TamircimAPI.Data
         public DbSet<UserPermission> UserPermissions { get; set; }
         public DbSet<EmailVerificationToken> EmailVerificationTokens { get; set; }
         public DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
+        public DbSet<TwoFactorChallenge> TwoFactorChallenges { get; set; }
         #endregion
 
         #region MÜŞTERİ
@@ -445,6 +446,27 @@ namespace TamircimAPI.Data
             {
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.CodeHash).IsRequired().HasMaxLength(128);
+                entity.HasIndex(e => e.UserId);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Ignore(e => e.IsConsumed);
+                entity.Ignore(e => e.IsExpired);
+                entity.Ignore(e => e.IsValid);
+            });
+            #endregion
+
+            #region TwoFactorChallenge
+            modelBuilder.Entity<TwoFactorChallenge>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.ChallengeHash).IsRequired().HasMaxLength(128);
+                entity.Property(e => e.CodeHash).IsRequired().HasMaxLength(128);
+                entity.Property(e => e.Purpose).HasConversion<int>();
+                entity.HasIndex(e => e.ChallengeHash).IsUnique();
                 entity.HasIndex(e => e.UserId);
 
                 entity.HasOne(e => e.User)

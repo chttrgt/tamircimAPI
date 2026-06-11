@@ -7,5 +7,8 @@ namespace TamircimAPI.Services.Email
 
         // Şifre sıfırlama: kullanıcıya 6 haneli kod gönderir (15 dk geçerli).
         Task SendPasswordResetEmailAsync(string toEmail, string toName, string code, string lang);
+
+        // İki adımlı doğrulama: girişte / 2FA açarken 6 haneli kod gönderir (5 dk geçerli).
+        Task SendTwoFactorCodeEmailAsync(string toEmail, string toName, string code, string lang);
     }
 }

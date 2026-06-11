@@ -191,6 +191,74 @@ namespace TamircimAPI.Services.Email
             _logger.LogInformation("Şifre sıfırlama e-postası gönderildi: {Email} ({Lang})", toEmail, lang);
         }
 
+        // ── İki adımlı doğrulama (6 haneli kod) ───────────────────────────────────
+        // Şifre sıfırlama e-postasının HTML/metin gövdesini yeniden kullanır; yalnızca
+        // metinler (konu/açıklama/süre) 2FA'ya özeldir.
+        public async Task SendTwoFactorCodeEmailAsync(string toEmail, string toName, string code, string lang)
+        {
+            var host = Require("SMTP_HOST");
+            var port = int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var p) ? p : 587;
+            var user = Environment.GetEnvironmentVariable("SMTP_USER");
+            var pass = Environment.GetEnvironmentVariable("SMTP_PASS");
+            var from = Require("SMTP_FROM");
+            var fromName = Environment.GetEnvironmentVariable("SMTP_FROM_NAME") ?? "Tamircim";
+
+            var s = TwoFactorStrings(lang);
+
+            var message = new MimeMessage();
+            message.From.Add(new MailboxAddress(fromName, from));
+            message.To.Add(new MailboxAddress(toName, toEmail));
+            message.Subject = s.Subject;
+
+            var builder = new BodyBuilder
+            {
+                HtmlBody = BuildResetHtmlBody(toName, code, from, s),
+                TextBody = BuildResetTextBody(toName, code, s),
+            };
+            message.Body = builder.ToMessageBody();
+
+            using var client = new SmtpClient();
+            var socketOptions = port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+            await client.ConnectAsync(host, port, socketOptions);
+            if (!string.IsNullOrEmpty(user))
+                await client.AuthenticateAsync(user, pass ?? string.Empty);
+            await client.SendAsync(message);
+            await client.DisconnectAsync(true);
+
+            _logger.LogInformation("2FA kodu e-postası gönderildi: {Email} ({Lang})", toEmail, lang);
+        }
+
+        private static ResetStrings_ TwoFactorStrings(string lang) => lang switch
+        {
+            "en" => new ResetStrings_(
+                "Your Tamircim verification code",
+                "Hello {0},",
+                "Use the code below to complete your sign-in:",
+                "Verification code",
+                "This code is valid for 5 minutes.",
+                "If you didn't try to sign in, ignore this email and change your password.",
+                "📩 If this email landed in your <strong>Spam/Junk</strong> folder, please add <strong>{0}</strong> to your contacts.",
+                "© Tamircim — Repair Service Management"),
+            "de" => new ResetStrings_(
+                "Ihr Tamircim-Verifizierungscode",
+                "Hallo {0},",
+                "Verwenden Sie den folgenden Code, um die Anmeldung abzuschließen:",
+                "Code",
+                "Dieser Code ist 5 Minuten gültig.",
+                "Falls Sie sich nicht anmelden wollten, ignorieren Sie diese E-Mail und ändern Sie Ihr Passwort.",
+                "📩 Falls diese E-Mail im <strong>Spam-/Junk-Ordner</strong> gelandet ist, fügen Sie bitte <strong>{0}</strong> zu Ihren Kontakten hinzu.",
+                "© Tamircim — Verwaltung technischer Dienste"),
+            _ => new ResetStrings_(
+                "Tamircim doğrulama kodun",
+                "Merhaba {0},",
+                "Girişini tamamlamak için aşağıdaki kodu kullan:",
+                "Doğrulama kodu",
+                "Bu kod 5 dakika geçerlidir.",
+                "Bu girişi sen yapmadıysan bu e-postayı yok say ve şifreni değiştir.",
+                "📩 Bu e-postayı <strong>Spam/Önemsiz</strong> klasöründe bulduysan lütfen <strong>{0}</strong> adresini kişilerine ekle.",
+                "© Tamircim — Teknik Servis Yönetimi"),
+        };
+
         private sealed record ResetStrings_(
             string Subject, string Greeting, string Intro, string CodeLabel,
             string Expiry, string Ignore, string SpamNote, string Footer);

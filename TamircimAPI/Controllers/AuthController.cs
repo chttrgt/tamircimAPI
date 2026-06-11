@@ -88,9 +88,63 @@ namespace TamircimAPI.Controllers
         public async Task<IActionResult> Login([FromBody] LoginDTO dto)
         {
             var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            var result = await _authService.LoginAsync(dto, ipAddress);
+            var result = await _authService.LoginAsync(dto, ipAddress, ResolveLang());
             return Ok(result);
         }
+
+        // ── İki adımlı doğrulama (e-posta OTP) ──
+
+        // Login 2. adımı — public (token henüz yok): challenge + kod → token'lar.
+        [HttpPost("2fa/verify")]
+        [EnableRateLimiting("login")]
+        public async Task<IActionResult> VerifyTwoFactor([FromBody] TwoFactorVerifyDTO dto)
+        {
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var result = await _authService.VerifyTwoFactorLoginAsync(dto, ipAddress);
+            return Ok(result);
+        }
+
+        [HttpPost("2fa/resend")]
+        [EnableRateLimiting("login")]
+        public async Task<IActionResult> ResendTwoFactor([FromBody] TwoFactorResendDTO dto)
+        {
+            await _authService.ResendTwoFactorAsync(dto.ChallengeToken, ResolveLang());
+            return Ok(new { message = "Kod tekrar gönderildi." });
+        }
+
+        // Açma/kapama — yalnızca Sahip, kimlik doğrulamalı.
+        [HttpPost("2fa/enable/request")]
+        [Authorize(Roles = "Owner")]
+        [EnableRateLimiting("profile")]
+        public async Task<IActionResult> RequestEnableTwoFactor()
+        {
+            if (!TryGetUserId(out var userId)) return Unauthorized();
+            var result = await _authService.RequestEnableTwoFactorAsync(userId, ResolveLang());
+            return Ok(result);
+        }
+
+        [HttpPost("2fa/enable/confirm")]
+        [Authorize(Roles = "Owner")]
+        [EnableRateLimiting("profile")]
+        public async Task<IActionResult> ConfirmEnableTwoFactor([FromBody] TwoFactorVerifyDTO dto)
+        {
+            if (!TryGetUserId(out var userId)) return Unauthorized();
+            await _authService.ConfirmEnableTwoFactorAsync(userId, dto);
+            return Ok(new { message = "İki adımlı doğrulama açıldı." });
+        }
+
+        [HttpPost("2fa/disable")]
+        [Authorize(Roles = "Owner")]
+        [EnableRateLimiting("profile")]
+        public async Task<IActionResult> DisableTwoFactor([FromBody] TwoFactorDisableDTO dto)
+        {
+            if (!TryGetUserId(out var userId)) return Unauthorized();
+            await _authService.DisableTwoFactorAsync(userId, dto.Password);
+            return Ok(new { message = "İki adımlı doğrulama kapatıldı." });
+        }
+
+        private bool TryGetUserId(out int userId) =>
+            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out userId);
 
         [HttpPost("refresh-token")]
         [EnableRateLimiting("auth")]

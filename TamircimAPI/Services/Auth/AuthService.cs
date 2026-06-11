@@ -56,6 +56,7 @@ namespace TamircimAPI.Services.Auth
             Role = user.Role.ToString(),
             Permissions = user.Permissions.Select(p => p.Permission).ToList(),
             MustChangePassword = user.MustChangePassword,
+            TwoFactorEnabled = user.TwoFactorEnabled,
         };
 
         // Açık self-servis kayıt: yeni tenant (dükkân) + sahip kullanıcı oluşturur.
@@ -202,7 +203,7 @@ namespace TamircimAPI.Services.Auth
             await SendVerificationAsync(user.Email, user.FullName, newToken, lang);
         }
 
-        public async Task<LoginResponseDTO> LoginAsync(LoginDTO dto, string ipAddress)
+        public async Task<LoginResponseDTO> LoginAsync(LoginDTO dto, string ipAddress, string lang)
         {
             var email = dto.Email.Trim().ToLowerInvariant();
 
@@ -228,6 +229,19 @@ namespace TamircimAPI.Services.Auth
                 throw new BusinessRuleException(
                     "Hesabın henüz doğrulanmadı. Lütfen e-postandaki doğrulama bağlantısına tıkla.",
                     "EMAIL_NOT_VERIFIED");
+
+            // İki adımlı doğrulama açıksa token verme: e-postaya kod gönder, challenge dön.
+            if (user.TwoFactorEnabled)
+            {
+                var challengeToken = await CreateChallengeAsync(user, TwoFactorPurpose.Login, lang);
+                return new LoginResponseDTO
+                {
+                    TwoFactorRequired = true,
+                    ChallengeToken = challengeToken,
+                    Email = MaskEmail(user.Email),
+                    TwoFactorEnabled = true,
+                };
+            }
 
             var accessToken = _tokenService.GenerateAccessToken(user);
             var refreshToken = _tokenService.GenerateRefreshToken();
@@ -554,6 +568,188 @@ namespace TamircimAPI.Services.Auth
             }
 
             await _db.SaveChangesAsync();
+        }
+
+        // ── İki adımlı doğrulama (e-posta OTP) ────────────────────────────────────
+
+        public async Task<LoginResponseDTO> VerifyTwoFactorLoginAsync(TwoFactorVerifyDTO dto, string ipAddress)
+        {
+            var challenge = await VerifyChallengeAsync(dto.ChallengeToken, dto.Code, TwoFactorPurpose.Login, null);
+
+            // Token üretimi için kullanıcıyı izinleri + tenant'ıyla yükle (pre-auth → IgnoreQueryFilters).
+            var user = await _db.Users
+                .IgnoreQueryFilters()
+                .Include(u => u.Permissions)
+                .Include(u => u.Tenant)
+                .FirstOrDefaultAsync(u => u.Id == challenge.UserId && u.IsActive);
+            if (user == null || !user.Tenant.IsActive)
+                throw new UnauthorizedAccessException("E-posta veya şifre hatalı.");
+
+            var accessToken = _tokenService.GenerateAccessToken(user);
+            var refreshToken = _tokenService.GenerateRefreshToken();
+            var expireDays = int.Parse(_configuration["Jwt:RefreshTokenExpireDays"] ?? "7");
+            _db.RefreshTokens.Add(new RefreshToken
+            {
+                TenantId = user.TenantId,
+                UserId = user.Id,
+                Token = _tokenService.HashToken(refreshToken),
+                ExpiresAt = DateTime.UtcNow.AddDays(expireDays),
+                CreatedByIp = ipAddress
+            });
+            await _db.SaveChangesAsync();
+
+            return BuildLoginResponse(user, accessToken, refreshToken);
+        }
+
+        public async Task ResendTwoFactorAsync(string challengeToken, string lang)
+        {
+            var hash = _tokenService.HashToken(challengeToken ?? string.Empty);
+            var challenge = await _db.TwoFactorChallenges
+                .IgnoreQueryFilters()
+                .Include(c => c.User)
+                .FirstOrDefaultAsync(c => c.ChallengeHash == hash && c.ConsumedAt == null);
+
+            if (challenge == null || challenge.IsExpired)
+                throw new BusinessRuleException("Doğrulama geçersiz veya süresi dolmuş.", "TFA_INVALID");
+
+            // Cooldown: çok sık yeni kod gönderimini engelle (e-posta spam + SMTP kotası).
+            if (DateTime.UtcNow - challenge.CreatedAt < TimeSpan.FromSeconds(60))
+                throw new BusinessRuleException("Yeni kod istemek için biraz bekle.", "TFA_COOLDOWN");
+
+            var code = GenerateNumericCode(6);
+            challenge.CodeHash = _tokenService.HashToken(code);
+            challenge.AttemptCount = 0;
+            challenge.CreatedAt = DateTime.UtcNow;
+            challenge.ExpiresAt = DateTime.UtcNow.AddMinutes(5);
+            await _db.SaveChangesAsync();
+
+            try { await _emailSender.SendTwoFactorCodeEmailAsync(challenge.User.Email, challenge.User.FullName, code, lang); }
+            catch (Exception ex) { _logger.LogError(ex, "2FA kodu yeniden gönderilemedi: {Email}", challenge.User.Email); }
+        }
+
+        public async Task<TwoFactorChallengeResponseDTO> RequestEnableTwoFactorAsync(int userId, string lang)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId)
+                ?? throw new UnauthorizedAccessException();
+            if (user.Role != UserRole.Owner)
+                throw new BusinessRuleException("Bu işlem yalnızca sahip içindir.", "FORBIDDEN");
+            if (user.TwoFactorEnabled)
+                throw new BusinessRuleException("İki adımlı doğrulama zaten açık.", "TFA_ALREADY");
+
+            var challengeToken = await CreateChallengeAsync(user, TwoFactorPurpose.Enable, lang);
+            return new TwoFactorChallengeResponseDTO
+            {
+                ChallengeToken = challengeToken,
+                MaskedEmail = MaskEmail(user.Email),
+            };
+        }
+
+        public async Task ConfirmEnableTwoFactorAsync(int userId, TwoFactorVerifyDTO dto)
+        {
+            var challenge = await VerifyChallengeAsync(dto.ChallengeToken, dto.Code, TwoFactorPurpose.Enable, userId);
+
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.Id == challenge.UserId)
+                ?? throw new UnauthorizedAccessException();
+            if (user.Role != UserRole.Owner)
+                throw new BusinessRuleException("Bu işlem yalnızca sahip içindir.", "FORBIDDEN");
+
+            user.TwoFactorEnabled = true;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task DisableTwoFactorAsync(int userId, string password)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId)
+                ?? throw new UnauthorizedAccessException();
+
+            // Kapatma şifre teyidi ister → oturum ele geçirilse bile (şifresiz) kapatılamaz.
+            if (!BCrypt.Net.BCrypt.Verify(password ?? string.Empty, user.PasswordHash))
+                throw new BusinessRuleException("Şifre hatalı.", "INVALID_PASSWORD");
+
+            user.TwoFactorEnabled = false;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            // Bekleyen challenge'ları temizle.
+            var pending = await _db.TwoFactorChallenges
+                .IgnoreQueryFilters()
+                .Where(c => c.UserId == userId && c.ConsumedAt == null)
+                .ToListAsync();
+            foreach (var c in pending) c.ConsumedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+        }
+
+        // Yeni challenge üretir: aynı amaçtaki eski kodları tüketir, kodu e-postayla yollar,
+        // istemciye opak challenge token döner (DB'de yalnızca hash'leri tutulur).
+        private async Task<string> CreateChallengeAsync(User user, TwoFactorPurpose purpose, string lang)
+        {
+            var old = await _db.TwoFactorChallenges
+                .IgnoreQueryFilters()
+                .Where(c => c.UserId == user.Id && c.Purpose == purpose && c.ConsumedAt == null)
+                .ToListAsync();
+            foreach (var c in old) c.ConsumedAt = DateTime.UtcNow;
+
+            var challengeToken = GenerateUrlSafeToken();
+            var code = GenerateNumericCode(6);
+            _db.TwoFactorChallenges.Add(new TwoFactorChallenge
+            {
+                UserId = user.Id,
+                ChallengeHash = _tokenService.HashToken(challengeToken),
+                CodeHash = _tokenService.HashToken(code),
+                Purpose = purpose,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(5),
+            });
+            await _db.SaveChangesAsync();
+
+            try { await _emailSender.SendTwoFactorCodeEmailAsync(user.Email, user.FullName, code, lang); }
+            catch (Exception ex) { _logger.LogError(ex, "2FA kodu gönderilemedi: {Email}", user.Email); }
+
+            return challengeToken;
+        }
+
+        // Challenge + kodu doğrular; başarılıysa challenge'ı tüketir ve döner. Hata mesajları
+        // genel (kod yanlış mı / süresi mi doldu ayrımı sızmaz). Brute-force: AttemptCount.
+        private async Task<TwoFactorChallenge> VerifyChallengeAsync(
+            string challengeToken, string code, TwoFactorPurpose purpose, int? expectedUserId)
+        {
+            var hash = _tokenService.HashToken(challengeToken ?? string.Empty);
+            var challenge = await _db.TwoFactorChallenges
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(c => c.ChallengeHash == hash && c.Purpose == purpose && c.ConsumedAt == null);
+
+            if (challenge == null || challenge.IsExpired
+                || (expectedUserId.HasValue && challenge.UserId != expectedUserId.Value))
+                throw new BusinessRuleException("Kod geçersiz veya süresi dolmuş.", "TFA_INVALID");
+
+            if (challenge.AttemptCount >= 5)
+            {
+                challenge.ConsumedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                throw new BusinessRuleException("Çok fazla yanlış deneme. Lütfen yeni kod iste.", "TFA_TOO_MANY");
+            }
+
+            if (challenge.CodeHash != _tokenService.HashToken((code ?? string.Empty).Trim()))
+            {
+                challenge.AttemptCount++;
+                await _db.SaveChangesAsync();
+                throw new BusinessRuleException("Kod geçersiz veya süresi dolmuş.", "TFA_INVALID");
+            }
+
+            challenge.ConsumedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            return challenge;
+        }
+
+        // E-postayı maskele: "ahmet@x.com" → "ah***@x.com" (kodun nereye gittiğini gösterir).
+        private static string MaskEmail(string email)
+        {
+            var at = email.IndexOf('@');
+            if (at <= 0) return "***";
+            var local = email[..at];
+            var domain = email[at..];
+            var visible = local.Length <= 2 ? local[..1] : local[..2];
+            return $"{visible}{new string('*', Math.Max(1, local.Length - visible.Length))}{domain}";
         }
 
         // Kriptografik rastgele 6 haneli kod (000000–999999; baştaki sıfırlar korunur).

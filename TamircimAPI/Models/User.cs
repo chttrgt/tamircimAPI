@@ -27,6 +27,10 @@ namespace TamircimAPI.Models
         // değiştirmeden devam edemez.
         public bool MustChangePassword { get; set; } = false;
 
+        // İki adımlı doğrulama (e-posta OTP). Yalnızca Sahip açabilir/kapatabilir; açıksa
+        // girişte şifreden sonra e-postaya gönderilen 6 haneli kod istenir.
+        public bool TwoFactorEnabled { get; set; } = false;
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
