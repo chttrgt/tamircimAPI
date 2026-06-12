@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TamircimAPI.Authorization;
+using TamircimAPI.Exceptions;
 using TamircimAPI.Models.DTOs.Device;
 using TamircimAPI.Services.Device;
 
@@ -23,6 +24,13 @@ namespace TamircimAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll([FromQuery] int? customerId = null, [FromQuery] string? search = null, [FromQuery] string? filter = null)
         {
+            // Sayfasız liste yalnızca tek müşteriye sınırlıdır (CustomerDetail / cihaz ekleme akışı).
+            // customerId olmadan çağrı tüm tabloyu belleğe çekerdi → bilinçli olarak engellenir.
+            // Tüm cihazların listesi için sayfalı uç kullanılmalı: GET /api/devices/paged
+            if (customerId is null)
+                throw new BusinessRuleException(
+                    "Sayfasız cihaz listesi için müşteri belirtilmelidir.", "CUSTOMER_ID_REQUIRED");
+
             var result = await _query.GetAllAsync(customerId, search, filter);
             return Ok(result);
         }
