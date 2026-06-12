@@ -42,14 +42,33 @@ namespace TamircimAPI.Controllers
         // ve basit bir HTML sayfası döner. Public.
         [HttpGet("verify-email")]
         [EnableRateLimiting("auth")]
-        public async Task<IActionResult> VerifyEmail([FromQuery] string token)
+        public async Task<IActionResult> VerifyEmail([FromQuery] string token, [FromQuery] string? lang = null)
         {
             var ok = await _authService.VerifyEmailAsync(token);
+
+            // lang linkten gelir (kayıt sırasında seçilen dil). Tarayıcı diline bakılmaz.
+            var code = (lang ?? "tr").Trim().ToLowerInvariant() switch
+            {
+                "en" => "en",
+                "de" => "de",
+                _ => "tr",
+            };
+
+            var (okTitle, okMsg, failTitle, failMsg) = code switch
+            {
+                "en" => ("Email verified ✓", "You can now sign in to the Tamircim app.",
+                         "Link is invalid or has expired", "Please request a new verification email from the app."),
+                "de" => ("E-Mail bestätigt ✓", "Sie können sich jetzt in der Tamircim-App anmelden.",
+                         "Link ist ungültig oder abgelaufen", "Bitte fordern Sie in der App eine neue Bestätigungs-E-Mail an."),
+                _ => ("E-posta doğrulandı ✓", "Artık Tamircim uygulamasına giriş yapabilirsin.",
+                      "Bağlantı geçersiz veya süresi dolmuş", "Lütfen uygulamadan yeni doğrulama e-postası iste."),
+            };
+
             var body = ok
-                ? "<h2>E-posta doğrulandı ✓</h2><p>Artık Tamircim uygulamasına giriş yapabilirsin.</p>"
-                : "<h2>Bağlantı geçersiz veya süresi dolmuş</h2><p>Lütfen uygulamadan yeni doğrulama e-postası iste.</p>";
-            var html = $"<!DOCTYPE html><html lang=\"tr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body style=\"font-family:sans-serif;text-align:center;padding:40px;color:#0f172a\">{body}</body></html>";
-            // charset=utf-8 → Türkçe karakterler (ş, ç, ı, ğ) bozulmaz.
+                ? $"<h2>{okTitle}</h2><p>{okMsg}</p>"
+                : $"<h2>{failTitle}</h2><p>{failMsg}</p>";
+            var html = $"<!DOCTYPE html><html lang=\"{code}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body style=\"font-family:sans-serif;text-align:center;padding:40px;color:#0f172a\">{body}</body></html>";
+            // charset=utf-8 → Türkçe/Almanca karakterler (ş, ç, ı, ğ, ü, ö) bozulmaz.
             return Content(html, "text/html; charset=utf-8");
         }
 

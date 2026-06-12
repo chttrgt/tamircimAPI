@@ -454,7 +454,9 @@ namespace TamircimAPI.Services.Auth
             var baseUrl = (Environment.GetEnvironmentVariable("APP_PUBLIC_URL")
                 ?? _configuration["App:PublicUrl"]
                 ?? "").TrimEnd('/');
-            var link = $"{baseUrl}/api/auth/verify-email?token={Uri.EscapeDataString(token)}";
+            // lang'i linke de taşı → doğrulama linkine tıklanınca açılan HTML sayfası da
+            // (tarayıcı dilinden bağımsız) kullanıcının seçtiği dilde gösterilir.
+            var link = $"{baseUrl}/api/auth/verify-email?token={Uri.EscapeDataString(token)}&lang={Uri.EscapeDataString(lang)}";
             await _emailSender.SendVerificationEmailAsync(email, name, link, lang);
         }
 
