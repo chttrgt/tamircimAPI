@@ -18,6 +18,11 @@ namespace TamircimAPI.Models
         // E-posta doğrulanana kadar false → bu tenant'ın kullanıcıları giriş yapamaz.
         public bool IsActive { get; set; } = false;
 
+        // Hesap silme talebi (yalnızca Owner). null = silme bekleyen yok. Set ise: bu tarihte
+        // (talep + grace süresi) arka plan job'ı tenant'ı ve TÜM verisini kalıcı siler.
+        // Grace süresince hesap askıya alınır; Owner giriş yapıp iptal edebilir.
+        public DateTime? DeletionScheduledAt { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Per-tenant numaralandırma sayaçları. Atomik UPDATE ... RETURNING ile arttırılır

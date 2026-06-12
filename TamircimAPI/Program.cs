@@ -178,6 +178,7 @@ builder.Services.AddScoped<TamircimAPI.Services.Captcha.ICaptchaVerifier, Tamirc
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IStaffService, StaffService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<TamircimAPI.Services.Account.IAccountService, TamircimAPI.Services.Account.AccountService>();
 builder.Services.AddScoped<ICodeGenerator, CodeGenerator>();
 builder.Services.AddScoped<ICustomerQueryService, CustomerQueryService>();
 builder.Services.AddScoped<ICustomerCommandService, CustomerCommandService>();
@@ -193,6 +194,9 @@ builder.Services.AddScoped<TamircimAPI.Services.Report.IReportQueryService, Tami
 builder.Services.AddSingleton<TamircimAPI.Services.Storage.IPhotoStorage, TamircimAPI.Services.Storage.LocalPhotoStorage>();
 builder.Services.AddScoped<IDevicePhotoService, DevicePhotoService>();
 builder.Services.AddHostedService<TamircimAPI.Services.Storage.PhotoCleanupService>();
+
+// Hesap silme: grace süresi dolan tenant'ları kalıcı silen arka plan görevi.
+builder.Services.AddHostedService<TamircimAPI.Services.Account.AccountDeletionService>();
 
 // Authorization
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();

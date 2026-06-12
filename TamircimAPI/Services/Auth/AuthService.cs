@@ -57,6 +57,8 @@ namespace TamircimAPI.Services.Auth
             Permissions = user.Permissions.Select(p => p.Permission).ToList(),
             MustChangePassword = user.MustChangePassword,
             TwoFactorEnabled = user.TwoFactorEnabled,
+            // Yalnızca Owner için anlamlı; istemci bunu görünce silme-bekliyor ekranına yönlendirir.
+            AccountDeletionScheduledAt = user.Tenant?.DeletionScheduledAt,
         };
 
         // Açık self-servis kayıt: yeni tenant (dükkân) + sahip kullanıcı oluşturur.
@@ -230,6 +232,14 @@ namespace TamircimAPI.Services.Auth
                     "Hesabın henüz doğrulanmadı. Lütfen e-postandaki doğrulama bağlantısına tıkla.",
                     "EMAIL_NOT_VERIFIED");
 
+            // Hesap silme bekliyorsa: grace süresince hesap askıdadır. Personel giriş yapamaz;
+            // yalnızca Owner girebilir (silmeyi iptal edebilsin). Owner girişinde token verilir
+            // ve yanıt AccountDeletionScheduledAt taşır → istemci silme-bekliyor ekranına yönlendirir.
+            if (user.Tenant.DeletionScheduledAt != null && user.Role != UserRole.Owner)
+                throw new BusinessRuleException(
+                    "Bu hesap silinmek üzere. Yalnızca dükkân sahibi işlem yapabilir.",
+                    "ACCOUNT_PENDING_DELETION");
+
             // İki adımlı doğrulama açıksa token verme: e-postaya kod gönder, challenge dön.
             if (user.TwoFactorEnabled)
             {
@@ -301,6 +311,11 @@ namespace TamircimAPI.Services.Auth
             // S4 — Hesap hâlâ aktif mi? Pasifleştirilmiş kullanıcı / doğrulanmamış tenant
             // refresh ile erişimini sürdüremesin (defense-in-depth).
             if (!token.User.IsActive || !token.User.Tenant.IsActive)
+                throw new UnauthorizedAccessException("Hesap erişimi devre dışı.");
+
+            // Hesap silme bekliyorsa personel oturumu yenilenmesin (askıya alma) → en geç
+            // access token ömrü kadar sürede oturumu kapanır. Owner yenileyebilir (iptal için).
+            if (token.User.Tenant.DeletionScheduledAt != null && token.User.Role != UserRole.Owner)
                 throw new UnauthorizedAccessException("Hesap erişimi devre dışı.");
 
             var newRefreshToken = _tokenService.GenerateRefreshToken();

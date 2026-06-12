@@ -55,6 +55,10 @@ namespace TamircimAPI.Models.DTOs.Auth
         public string? ChallengeToken { get; set; }
         // Kullanıcının 2FA durumu (istemci profil ekranında anahtarı gösterir).
         public bool TwoFactorEnabled { get; set; }
+
+        // Hesap silme bekliyorsa (yalnızca Owner girişinde dolu): kalıcı silme tarihi.
+        // İstemci bunu görünce sahibi "silme bekliyor + iptal" ekranına yönlendirir.
+        public DateTime? AccountDeletionScheduledAt { get; set; }
     }
 
     // 2FA challenge yanıtı (login 2. adım için ChallengeToken + maskeli e-posta).
