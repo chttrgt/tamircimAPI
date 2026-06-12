@@ -1,8 +1,9 @@
 namespace TamircimAPI.Services.Storage
 {
-    // Görselleri sunucu diskinde {root}/devices/{deviceId}/{fileName} altında tutar.
+    // Görselleri sunucu diskinde {root}/devices/{tenantId}/{deviceId}/{fileName} altında tutar.
     // root, appsettings "Storage:PhotosPath" (varsayılan "uploads"); wwwroot DEĞİL
     // → public statik servis yok, erişim yalnızca auth'lu controller üzerinden.
+    // Tenant izolasyonu DİSK seviyesinde: hesap silmede tenant klasörü tek hamlede silinir.
     public class LocalPhotoStorage : IPhotoStorage
     {
         private readonly string _root;
@@ -19,7 +20,9 @@ namespace TamircimAPI.Services.Storage
                 : Path.Combine(env.ContentRootPath, configured);
         }
 
-        private string DeviceDir(int deviceId) => Path.Combine(_root, "devices", deviceId.ToString());
+        private string TenantDir(int tenantId) => Path.Combine(_root, "devices", tenantId.ToString());
+        private string DeviceDir(int tenantId, int deviceId) =>
+            Path.Combine(TenantDir(tenantId), deviceId.ToString());
 
         // Path traversal koruması: dosya adı yalnızca üretilen guid tabanlı isim olmalı.
         private static void EnsureSafeName(string fileName)
@@ -33,27 +36,33 @@ namespace TamircimAPI.Services.Storage
             }
         }
 
-        public async Task SaveAsync(int deviceId, string fileName, byte[] bytes, CancellationToken ct = default)
+        public async Task SaveAsync(int tenantId, int deviceId, string fileName, byte[] bytes, CancellationToken ct = default)
         {
             EnsureSafeName(fileName);
-            var dir = DeviceDir(deviceId);
+            var dir = DeviceDir(tenantId, deviceId);
             Directory.CreateDirectory(dir);
             await File.WriteAllBytesAsync(Path.Combine(dir, fileName), bytes, ct);
         }
 
-        public Stream? OpenRead(int deviceId, string fileName)
+        public Stream? OpenRead(int tenantId, int deviceId, string fileName)
         {
             EnsureSafeName(fileName);
-            var path = Path.Combine(DeviceDir(deviceId), fileName);
+            var path = Path.Combine(DeviceDir(tenantId, deviceId), fileName);
             if (!File.Exists(path)) return null;
             return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         }
 
-        public void Delete(int deviceId, string fileName)
+        public void Delete(int tenantId, int deviceId, string fileName)
         {
             EnsureSafeName(fileName);
-            var path = Path.Combine(DeviceDir(deviceId), fileName);
+            var path = Path.Combine(DeviceDir(tenantId, deviceId), fileName);
             if (File.Exists(path)) File.Delete(path);
+        }
+
+        public void DeleteTenant(int tenantId)
+        {
+            var dir = TenantDir(tenantId);
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         }
     }
 }

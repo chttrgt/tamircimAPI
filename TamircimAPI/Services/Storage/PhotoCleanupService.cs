@@ -75,8 +75,8 @@ namespace TamircimAPI.Services.Storage
             foreach (var photo in expired)
             {
                 // Önce diskten (ana + thumbnail), hata olsa bile DB satırını sil
-                try { storage.Delete(photo.DeviceId, photo.FileName); } catch { /* yoksay */ }
-                try { storage.Delete(photo.DeviceId, photo.ThumbnailFileName); } catch { /* yoksay */ }
+                try { storage.Delete(photo.TenantId, photo.DeviceId, photo.FileName); } catch { /* yoksay */ }
+                try { storage.Delete(photo.TenantId, photo.DeviceId, photo.ThumbnailFileName); } catch { /* yoksay */ }
             }
 
             db.DevicePhotos.RemoveRange(expired);

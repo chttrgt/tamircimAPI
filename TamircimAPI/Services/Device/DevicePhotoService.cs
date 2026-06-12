@@ -3,6 +3,7 @@ using TamircimAPI.Data;
 using TamircimAPI.Models;
 using TamircimAPI.Models.DTOs.Device;
 using TamircimAPI.Services.Storage;
+using TamircimAPI.Services.Tenant;
 
 namespace TamircimAPI.Services.Device
 {
@@ -10,11 +11,13 @@ namespace TamircimAPI.Services.Device
     {
         private readonly ApplicationDbContext _db;
         private readonly IPhotoStorage _storage;
+        private readonly ITenantContext _tenantContext;
 
-        public DevicePhotoService(ApplicationDbContext db, IPhotoStorage storage)
+        public DevicePhotoService(ApplicationDbContext db, IPhotoStorage storage, ITenantContext tenantContext)
         {
             _db = db;
             _storage = storage;
+            _tenantContext = tenantContext;
         }
 
         public async Task<DevicePhotoPagedDTO> GetByDeviceAsync(int deviceId, int page, int pageSize)
@@ -52,8 +55,10 @@ namespace TamircimAPI.Services.Device
             var fileName = $"{guid}.jpg";
             var thumbName = $"{guid}_thumb.jpg";
 
-            await _storage.SaveAsync(deviceId, fileName, mainBytes, ct);
-            await _storage.SaveAsync(deviceId, thumbName, thumbBytes, ct);
+            var tenantId = _tenantContext.TenantId
+                ?? throw new InvalidOperationException("Fotoğraf yüklemek için tenant bağlamı gerekli.");
+            await _storage.SaveAsync(tenantId, deviceId, fileName, mainBytes, ct);
+            await _storage.SaveAsync(tenantId, deviceId, thumbName, thumbBytes, ct);
 
             var photo = new DevicePhoto
             {
@@ -79,7 +84,7 @@ namespace TamircimAPI.Services.Device
             if (photo == null) return null;
 
             var name = thumb ? photo.ThumbnailFileName : photo.FileName;
-            var stream = _storage.OpenRead(deviceId, name);
+            var stream = _storage.OpenRead(photo.TenantId, deviceId, name);
             if (stream == null) return null;
 
             return (stream, photo.ContentType);

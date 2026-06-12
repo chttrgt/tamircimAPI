@@ -95,18 +95,10 @@ namespace TamircimAPI.Services.Account
             {
                 await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-                // Diskteki fotoğraf dosyalarını sil (DB satırları aşağıda kaldırılacak).
-                // storage.Delete idempotent (dosya yoksa yutulur) → retry'da sorun olmaz.
-                var photos = await db.DevicePhotos
-                    .IgnoreQueryFilters()
-                    .Where(p => p.TenantId == tenantId)
-                    .Select(p => new { p.DeviceId, p.FileName, p.ThumbnailFileName })
-                    .ToListAsync(ct);
-                foreach (var p in photos)
-                {
-                    try { storage.Delete(p.DeviceId, p.FileName); } catch { /* yoksay */ }
-                    try { storage.Delete(p.DeviceId, p.ThumbnailFileName); } catch { /* yoksay */ }
-                }
+                // Diskteki TÜM fotoğraf klasörünü ({root}/devices/{tenantId}) tek hamlede sil.
+                // Tenant izolasyonu disk seviyesinde olduğu için tek Delete yeter; idempotent
+                // (klasör yoksa geçer) → transaction retry'ında sorun olmaz.
+                try { storage.DeleteTenant(tenantId); } catch { /* disk hatası DB silmesini engellemesin */ }
 
                 // Hard-delete (ExecuteDelete → soft-delete interceptor'ını baypas eder). Açık TenantId
                 // filtresi + IgnoreQueryFilters → soft-deleted satırlar dahil, yalnızca bu tenant.
