@@ -85,33 +85,43 @@ namespace TamircimAPI.Services.Account
         private static async Task DeleteTenantAsync(
             ApplicationDbContext db, IPhotoStorage storage, int tenantId, CancellationToken ct)
         {
-            await using var tx = await db.Database.BeginTransactionAsync(ct);
-
-            // Diskteki fotoğraf dosyalarını sil (DB satırları aşağıda kaldırılacak).
-            var photos = await db.DevicePhotos
-                .IgnoreQueryFilters()
-                .Where(p => p.TenantId == tenantId)
-                .Select(p => new { p.DeviceId, p.FileName, p.ThumbnailFileName })
-                .ToListAsync(ct);
-            foreach (var p in photos)
+            // DbContext EnableRetryOnFailure (NpgsqlRetryingExecutionStrategy) ile kurulu.
+            // Bu strateji açıkken manuel transaction (BeginTransaction) ancak execution
+            // strategy İÇİNDE kullanılabilir; aksi halde InvalidOperationException atar ve
+            // silme bloğuna hiç ulaşılmaz. Tüm transaction'lı işi strateji ile sarıyoruz →
+            // geçici hatada blok bir BÜTÜN olarak retriable çalışır.
+            var strategy = db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                try { storage.Delete(p.DeviceId, p.FileName); } catch { /* yoksay */ }
-                try { storage.Delete(p.DeviceId, p.ThumbnailFileName); } catch { /* yoksay */ }
-            }
+                await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-            // Hard-delete (ExecuteDelete → soft-delete interceptor'ını baypas eder). Açık TenantId
-            // filtresi + IgnoreQueryFilters → soft-deleted satırlar dahil, yalnızca bu tenant.
-            await db.Payments.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
-            await db.DevicePhotos.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
-            await db.RepairRecords.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
-            await db.Devices.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
-            await db.Customers.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
-            await db.AuditLogs.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
+                // Diskteki fotoğraf dosyalarını sil (DB satırları aşağıda kaldırılacak).
+                // storage.Delete idempotent (dosya yoksa yutulur) → retry'da sorun olmaz.
+                var photos = await db.DevicePhotos
+                    .IgnoreQueryFilters()
+                    .Where(p => p.TenantId == tenantId)
+                    .Select(p => new { p.DeviceId, p.FileName, p.ThumbnailFileName })
+                    .ToListAsync(ct);
+                foreach (var p in photos)
+                {
+                    try { storage.Delete(p.DeviceId, p.FileName); } catch { /* yoksay */ }
+                    try { storage.Delete(p.DeviceId, p.ThumbnailFileName); } catch { /* yoksay */ }
+                }
 
-            // Tenant'ı sil → User → RefreshToken/UserPermission/EmailVerification/2FA DB cascade.
-            await db.Tenants.Where(t => t.Id == tenantId).ExecuteDeleteAsync(ct);
+                // Hard-delete (ExecuteDelete → soft-delete interceptor'ını baypas eder). Açık TenantId
+                // filtresi + IgnoreQueryFilters → soft-deleted satırlar dahil, yalnızca bu tenant.
+                await db.Payments.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
+                await db.DevicePhotos.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
+                await db.RepairRecords.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
+                await db.Devices.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
+                await db.Customers.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
+                await db.AuditLogs.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct);
 
-            await tx.CommitAsync(ct);
+                // Tenant'ı sil → User → RefreshToken/UserPermission/EmailVerification/2FA DB cascade.
+                await db.Tenants.Where(t => t.Id == tenantId).ExecuteDeleteAsync(ct);
+
+                await tx.CommitAsync(ct);
+            });
         }
     }
 }
