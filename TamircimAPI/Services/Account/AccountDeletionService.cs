@@ -12,8 +12,7 @@ namespace TamircimAPI.Services.Account
     {
         private readonly IServiceProvider _services;
         private readonly ILogger<AccountDeletionService> _logger;
-        // TEST: kalıcı silmeyi hızlı görmek için 15 sn. Geri al → TimeSpan.FromHours(6).
-        private static readonly TimeSpan Interval = TimeSpan.FromSeconds(15);
+        private static readonly TimeSpan Interval = TimeSpan.FromHours(6);
 
         public AccountDeletionService(IServiceProvider services, ILogger<AccountDeletionService> logger)
         {
