@@ -39,7 +39,9 @@ namespace TamircimAPI.Services.Account
             if (user.Tenant.DeletionScheduledAt is { } existing)
                 return existing;
 
-            var scheduledAt = DateTime.UtcNow.AddDays(_graceDays);
+            // TEST: kalıcı silmeyi denemek için 14 gün yerine 30 sn. Geri al → AddDays(_graceDays).
+            var scheduledAt = DateTime.UtcNow.AddSeconds(30);
+            // var scheduledAt = DateTime.UtcNow.AddDays(_graceDays);
             user.Tenant.DeletionScheduledAt = scheduledAt;
 
             // Hesabı askıya al: personelin aktif oturumlarını iptal et (refresh artık çalışmaz →
